@@ -446,23 +446,37 @@ export default function DemoDetailPage() {
 
                 <Separator />
 
-                <div className="space-y-4">
-                  <h4 className="text-sm font-semibold">Overlays</h4>
-                  <div className="grid grid-cols-2 gap-2">
-                    <Button variant="outline" className="justify-start gap-2 h-10 px-3 hover:bg-primary/5 hover:border-primary/50 transition-all">
-                      <Type className="h-4 w-4" /> Title Card
-                    </Button>
-                    <Button variant="outline" className="justify-start gap-2 h-10 px-3 hover:bg-primary/5 hover:border-primary/50 transition-all">
-                      <MessageSquare className="h-4 w-4" /> Captions
-                    </Button>
-                    <Button variant="outline" className="justify-start gap-2 h-10 px-3 hover:bg-primary/5 hover:border-primary/50 transition-all">
-                      <MousePointer2 className="h-4 w-4" /> Click Effects
-                    </Button>
-                    <Button variant="outline" className="justify-start gap-2 h-10 px-3 hover:bg-primary/5 hover:border-primary/50 transition-all">
-                      <Sparkles className="h-4 w-4" /> AI Zoom
-                    </Button>
+                  <div className="space-y-4">
+                    <h4 className="text-sm font-semibold">Overlays</h4>
+                    <div className="grid grid-cols-2 gap-2">
+                      <Button 
+                        variant={activeClip.overlay?.show ? "default" : "outline"} 
+                        className="justify-start gap-2 h-10 px-3 transition-all"
+                        onClick={() => {
+                          const newClips = clips.map(c => c.id === activeClipId ? {...c, overlay: {...c.overlay, show: !c.overlay?.show}} : c);
+                          setClips(newClips);
+                        }}
+                      >
+                        <Type className="h-4 w-4" /> Title Card
+                      </Button>
+                      <Button 
+                        variant={activeClip.captions ? "default" : "outline"} 
+                        className="justify-start gap-2 h-10 px-3 transition-all"
+                        onClick={() => {
+                          const newClips = clips.map(c => c.id === activeClipId ? {...c, captions: c.captions ? "" : "Entering magic link credentials..."} : c);
+                          setClips(newClips);
+                        }}
+                      >
+                        <MessageSquare className="h-4 w-4" /> Captions
+                      </Button>
+                      <Button variant="outline" className="justify-start gap-2 h-10 px-3 hover:bg-primary/5 hover:border-primary/50 transition-all">
+                        <MousePointer2 className="h-4 w-4" /> Click Effects
+                      </Button>
+                      <Button variant="outline" className="justify-start gap-2 h-10 px-3 hover:bg-primary/5 hover:border-primary/50 transition-all">
+                        <Sparkles className="h-4 w-4" /> AI Zoom
+                      </Button>
+                    </div>
                   </div>
-                </div>
               </div>
             </TabsContent>
             
