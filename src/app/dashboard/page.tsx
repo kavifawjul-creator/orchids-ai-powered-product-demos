@@ -116,55 +116,57 @@ export default function DashboardPage() {
             View all
           </Button>
         </div>
-        <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
-          {recentDemos.map((demo) => (
-            <Card key={demo.id} className="overflow-hidden group hover:border-primary/50 transition-colors">
-              <div className="relative aspect-video overflow-hidden bg-muted">
-                <img 
-                  src={demo.thumbnail} 
-                  alt={demo.title}
-                  className="object-cover w-full h-full transition-transform group-hover:scale-105"
-                />
-                <div className="absolute inset-0 bg-black/40 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
-                  <Button size="icon" variant="secondary" className="rounded-full h-12 w-12">
-                    <Play className="h-6 w-6 fill-current" />
-                  </Button>
-                </div>
-                <div className="absolute top-2 right-2">
-                  <Badge variant={demo.status === "Completed" ? "default" : "secondary"} className="backdrop-blur-md bg-background/80 text-foreground border-none">
-                    {demo.status}
-                  </Badge>
-                </div>
-              </div>
-              <CardHeader className="p-4 space-y-0">
-                <div className="flex items-start justify-between gap-2">
-                  <div className="space-y-1">
-                    <CardTitle className="text-base line-clamp-1">{demo.title}</CardTitle>
-                    <CardDescription className="flex items-center gap-1.5">
-                      <ExternalLink className="h-3 w-3" />
-                      {demo.repo}
-                    </CardDescription>
-                  </div>
-                  <DropdownMenu>
-                    <DropdownMenuTrigger asChild>
-                      <Button variant="ghost" size="icon" className="h-8 w-8">
-                        <MoreVertical className="h-4 w-4" />
+          <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
+            {recentDemos.map((demo) => (
+              <Link key={demo.id} href={`/dashboard/demo/${demo.id}`}>
+                <Card className="overflow-hidden group hover:border-primary/50 transition-colors h-full">
+                  <div className="relative aspect-video overflow-hidden bg-muted">
+                    <img 
+                      src={demo.thumbnail} 
+                      alt={demo.title}
+                      className="object-cover w-full h-full transition-transform group-hover:scale-105"
+                    />
+                    <div className="absolute inset-0 bg-black/40 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
+                      <Button size="icon" variant="secondary" className="rounded-full h-12 w-12 pointer-events-none">
+                        <Play className="h-6 w-6 fill-current" />
                       </Button>
-                    </DropdownMenuTrigger>
-                    <DropdownMenuContent align="end">
-                      <DropdownMenuItem>Edit Settings</DropdownMenuItem>
-                      <DropdownMenuItem>Share Demo</DropdownMenuItem>
-                      <DropdownMenuItem className="text-destructive">Delete</DropdownMenuItem>
-                    </DropdownMenuContent>
-                  </DropdownMenu>
-                </div>
-              </CardHeader>
-              <CardContent className="px-4 pb-4 pt-0">
-                <p className="text-xs text-muted-foreground">{demo.date}</p>
-              </CardContent>
-            </Card>
-          ))}
-        </div>
+                    </div>
+                    <div className="absolute top-2 right-2">
+                      <Badge variant={demo.status === "Completed" ? "default" : "secondary"} className="backdrop-blur-md bg-background/80 text-foreground border-none">
+                        {demo.status}
+                      </Badge>
+                    </div>
+                  </div>
+                  <CardHeader className="p-4 space-y-0">
+                    <div className="flex items-start justify-between gap-2">
+                      <div className="space-y-1">
+                        <CardTitle className="text-base line-clamp-1">{demo.title}</CardTitle>
+                        <CardDescription className="flex items-center gap-1.5">
+                          <ExternalLink className="h-3 w-3" />
+                          {demo.repo}
+                        </CardDescription>
+                      </div>
+                      <DropdownMenu>
+                        <DropdownMenuTrigger asChild>
+                          <Button variant="ghost" size="icon" className="h-8 w-8" onClick={(e) => e.preventDefault()}>
+                            <MoreVertical className="h-4 w-4" />
+                          </Button>
+                        </DropdownMenuTrigger>
+                        <DropdownMenuContent align="end">
+                          <DropdownMenuItem>Edit Settings</DropdownMenuItem>
+                          <DropdownMenuItem>Share Demo</DropdownMenuItem>
+                          <DropdownMenuItem className="text-destructive">Delete</DropdownMenuItem>
+                        </DropdownMenuContent>
+                      </DropdownMenu>
+                    </div>
+                  </CardHeader>
+                  <CardContent className="px-4 pb-4 pt-0">
+                    <p className="text-xs text-muted-foreground">{demo.date}</p>
+                  </CardContent>
+                </Card>
+              </Link>
+            ))}
+          </div>
       </div>
     </div>
   )
