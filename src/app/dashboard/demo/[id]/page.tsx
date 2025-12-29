@@ -1,10 +1,8 @@
 
-"use client"
-
-import { useState } from "react"
+import { useState, useEffect } from "react"
 import Link from "next/link"
 import { useParams } from "next/navigation"
-import { motion, Reorder } from "framer-motion"
+import { motion, Reorder, AnimatePresence } from "framer-motion"
 import { 
   Play, 
   Pause, 
@@ -25,7 +23,10 @@ import {
   Copy,
   Globe,
   Lock,
-  Check
+  Check,
+  Sparkles,
+  Loader2,
+  MousePointer2
 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent } from "@/components/ui/card"
@@ -44,63 +45,92 @@ import {
   DialogFooter
 } from "@/components/ui/dialog"
 import { Switch } from "@/components/ui/switch"
-
-const initialClips = [
-    {
-      id: "clip-1",
-      title: "Introduction & Login",
-      duration: "0:12",
-      thumbnail: "https://images.unsplash.com/photo-1614332287897-cdc485fa562d?w=200&h=112&fit=crop",
-      narration: "We'll start by showing the simple login process with magic links.",
-      overlay: { text: "Login Flow", show: true },
-      captions: "Authenticating with magic link..."
-    },
-    {
-      id: "clip-2",
-      title: "Analytics Dashboard Overview",
-      duration: "0:45",
-      thumbnail: "https://images.unsplash.com/photo-1551288049-bbda3865c170?w=200&h=112&fit=crop",
-      narration: "The dashboard provides a real-time view of all your key performance indicators.",
-      overlay: { text: "Dashboard Overview", show: false },
-      captions: "Loading real-time metrics..."
-    },
-  {
-    id: "clip-3",
-    title: "Custom Report Generation",
-    duration: "1:15",
-    thumbnail: "https://images.unsplash.com/photo-1460925895917-afdab827c52f?w=200&h=112&fit=crop",
-    narration: "Users can generate complex reports in seconds using our AI-assisted query builder.",
-  },
-  {
-    id: "clip-4",
-    title: "Closing & Call to Action",
-    duration: "0:10",
-    thumbnail: "https://images.unsplash.com/photo-1531297484001-80022131f5a1?w=200&h=112&fit=crop",
-    narration: "Get started today for free and transform your data into insights.",
-  },
-]
+import { supabase } from "@/lib/supabase"
 
 export default function DemoDetailPage() {
   const { id } = useParams()
-  const [clips, setClips] = useState(initialClips)
+  const [demo, setDemo] = useState<any>(null)
+  const [clips, setClips] = useState<any[]>([])
+  const [loading, setLoading] = useState(true)
   const [isPlaying, setIsPlaying] = useState(false)
-  const [activeClipId, setActiveClipId] = useState("clip-1")
+  const [activeClipId, setActiveClipId] = useState<string | null>(null)
   const [isCopied, setIsCopied] = useState(false)
-  const [playbackProgress, setPlaybackProgress] = useState(33)
+  const [playbackProgress, setPlaybackProgress] = useState(0)
   const [isMagicGenerating, setIsMagicGenerating] = useState(false)
   const [brandColor, setBrandColor] = useState("#7c3aed")
 
+  useEffect(() => {
+    async function fetchData() {
+      const { data: demoData } = await supabase
+        .from('demos')
+        .select('*')
+        .eq('id', id)
+        .single()
+      
+      if (demoData) {
+        setDemo(demoData)
+        setBrandColor(demoData.brand_color || "#7c3aed")
+      }
+
+      const { data: clipsData } = await supabase
+        .from('clips')
+        .select('*')
+        .eq('demo_id', id)
+        .order('order_index', { ascending: true })
+      
+      if (clipsData) {
+        setClips(clipsData)
+        if (clipsData.length > 0) {
+          setActiveClipId(clipsData[0].id)
+        }
+      }
+      setLoading(false)
+    }
+    fetchData()
+  }, [id])
+
   const activeClip = clips.find(c => c.id === activeClipId) || clips[0]
 
+  const saveClip = async (clipId: string, updates: any) => {
+    await supabase
+      .from('clips')
+      .update(updates)
+      .eq('id', clipId)
+  }
+
+  const saveDemo = async (updates: any) => {
+    await supabase
+      .from('demos')
+      .update(updates)
+      .eq('id', id)
+  }
+
+  const handleReorder = async (newClips: any[]) => {
+    setClips(newClips)
+    // Batch update order_index
+    const updates = newClips.map((c, i) => ({
+      id: c.id,
+      order_index: i
+    }))
+
+    for (const update of updates) {
+      await supabase
+        .from('clips')
+        .update({ order_index: update.order_index })
+        .eq('id', update.id)
+    }
+  }
+
   const copyLink = () => {
-    navigator.clipboard.writeText(`https://autovid.ai/share/${id}`)
+    const url = typeof window !== 'undefined' ? `${window.location.origin}/share/${id}` : `https://autovid.ai/share/${id}`
+    navigator.clipboard.writeText(url)
     setIsCopied(true)
     setTimeout(() => setIsCopied(false), 2000)
   }
 
   const handleMagicNarration = () => {
     setIsMagicGenerating(true)
-    setTimeout(() => {
+    setTimeout(async () => {
       const suggestions = [
         "In this section, we highlight the intuitive interface designed for maximum productivity.",
         "Notice how the data seamlessly flows between components, providing a unified experience.",
@@ -110,8 +140,21 @@ export default function DemoDetailPage() {
       const randomSuggestion = suggestions[Math.floor(Math.random() * suggestions.length)]
       const newClips = clips.map(c => c.id === activeClipId ? {...c, narration: randomSuggestion} : c)
       setClips(newClips)
+      if (activeClipId) {
+        await saveClip(activeClipId, { narration: randomSuggestion })
+      }
       setIsMagicGenerating(false)
-    }, 2000)
+    }, 1500)
+  }
+
+  if (loading) {
+    return <div className="flex items-center justify-center h-full">
+      <Loader2 className="h-8 w-8 animate-spin text-primary" />
+    </div>
+  }
+
+  if (!demo) {
+    return <div className="text-center p-12">Demo not found</div>
   }
 
   return (
@@ -126,11 +169,11 @@ export default function DemoDetailPage() {
           </Link>
           <div>
             <div className="flex items-center gap-2">
-              <h2 className="text-2xl font-bold tracking-tight">Onboarding Flow Walkthrough</h2>
-              <Badge variant="outline">Draft</Badge>
+              <h2 className="text-2xl font-bold tracking-tight">{demo.title}</h2>
+              <Badge variant="outline">{demo.status}</Badge>
             </div>
             <p className="text-sm text-muted-foreground flex items-center gap-2">
-              <Clock className="h-3 w-3" /> Updated 2 hours ago • github.com/acme/app
+              <Clock className="h-3 w-3" /> Updated {new Date(demo.updated_at).toLocaleDateString()} • {demo.repo_url}
             </p>
           </div>
         </div>
@@ -174,7 +217,7 @@ export default function DemoDetailPage() {
                   <div className="grid flex-1 gap-2">
                     <Input
                       id="link"
-                      defaultValue={`https://autovid.ai/share/${id}`}
+                      defaultValue={typeof window !== 'undefined' ? `${window.location.origin}/share/${id}` : `https://autovid.ai/share/${id}`}
                       readOnly
                       className="font-mono text-xs"
                     />
@@ -221,8 +264,8 @@ export default function DemoDetailPage() {
                   className="absolute inset-0"
                 >
                   <img 
-                    src={activeClip.thumbnail} 
-                    alt={activeClip.title} 
+                    src={activeClip?.thumbnail_url || ""} 
+                    alt={activeClip?.title} 
                     className="w-full h-full object-cover opacity-60"
                   />
                 </motion.div>
@@ -230,7 +273,7 @@ export default function DemoDetailPage() {
 
               {/* Title Card Overlay */}
               <AnimatePresence>
-                {activeClip.overlay?.show && (
+                {activeClip?.overlay?.show && (
                   <motion.div 
                     initial={{ opacity: 0, scale: 0.9 }}
                     animate={{ opacity: 1, scale: 1 }}
@@ -258,7 +301,7 @@ export default function DemoDetailPage() {
               </AnimatePresence>
 
               {/* Captions Overlay */}
-              {activeClip.captions && isPlaying && (
+              {activeClip?.captions && isPlaying && (
                 <div className="absolute bottom-24 left-0 right-0 flex justify-center z-30 px-12">
                   <motion.div 
                     initial={{ y: 20, opacity: 0 }}
@@ -274,8 +317,8 @@ export default function DemoDetailPage() {
                 <div className="text-center space-y-4 z-10">
                   {!isPlaying && <Play className="h-16 w-16 text-white/80 mx-auto drop-shadow-lg cursor-pointer hover:scale-110 transition-transform" onClick={() => setIsPlaying(true)} />}
                   <div className="space-y-1">
-                     <p className="text-white font-bold text-xl drop-shadow-md">{activeClip.title}</p>
-                     <p className="text-white/60 font-mono text-xs">autonomous_recording_clip_{activeClipId.split('-')[1]}.mp4</p>
+                     <p className="text-white font-bold text-xl drop-shadow-md">{activeClip?.title}</p>
+                     <p className="text-white/60 font-mono text-xs">autonomous_recording_clip_{activeClipId?.slice(0, 4)}.mp4</p>
                   </div>
                 </div>
               </div>
@@ -319,7 +362,7 @@ export default function DemoDetailPage() {
                     <button className="hover:text-primary transition-colors">
                       <SkipForward className="h-5 w-5 fill-current" />
                     </button>
-                    <span className="text-sm font-mono">{isPlaying ? "0:04" : activeClip.duration} / 2:22</span>
+                    <span className="text-sm font-mono">{isPlaying ? "0:04" : activeClip?.duration} / 2:22</span>
                   </div>
                   <div className="flex items-center gap-4 text-xs font-mono text-white/60">
                     <span className="flex items-center gap-1">
@@ -349,7 +392,7 @@ export default function DemoDetailPage() {
               <Reorder.Group 
                 axis="x" 
                 values={clips} 
-                onReorder={setClips}
+                onReorder={handleReorder}
                 className="flex gap-4 min-w-max"
               >
                 {clips.map((clip) => (
@@ -362,7 +405,7 @@ export default function DemoDetailPage() {
                       ${activeClipId === clip.id ? "border-primary ring-2 ring-primary/20" : "border-border hover:border-primary/50"}
                     `}
                   >
-                    <img src={clip.thumbnail} alt={clip.title} className="absolute inset-0 w-full h-full object-cover transition-transform group-hover:scale-110" />
+                    <img src={clip.thumbnail_url} alt={clip.title} className="absolute inset-0 w-full h-full object-cover transition-transform group-hover:scale-110" />
                     <div className="absolute inset-0 bg-black/40 p-3 flex flex-col justify-between group">
                       <div className="flex justify-between items-start">
                         <GripVertical className="h-4 w-4 text-white/50 cursor-grab opacity-0 group-hover:opacity-100 transition-opacity" />
@@ -394,10 +437,11 @@ export default function DemoDetailPage() {
                     Clip Title
                   </label>
                   <Input 
-                    value={activeClip.title}
+                    value={activeClip?.title || ""}
                     onChange={(e) => {
                       const newClips = clips.map(c => c.id === activeClipId ? {...c, title: e.target.value} : c);
                       setClips(newClips);
+                      if (activeClipId) saveClip(activeClipId, { title: e.target.value });
                     }}
                   />
                 </div>
@@ -412,10 +456,11 @@ export default function DemoDetailPage() {
                   <Textarea 
                     className="h-32 resize-none"
                     placeholder="Enter what the AI should say during this clip..."
-                    value={activeClip.narration}
+                    value={activeClip?.narration || ""}
                     onChange={(e) => {
                       const newClips = clips.map(c => c.id === activeClipId ? {...c, narration: e.target.value} : c);
                       setClips(newClips);
+                      if (activeClipId) saveClip(activeClipId, { narration: e.target.value });
                     }}
                   />
                   <div className="flex gap-2">
@@ -450,21 +495,25 @@ export default function DemoDetailPage() {
                     <h4 className="text-sm font-semibold">Overlays</h4>
                     <div className="grid grid-cols-2 gap-2">
                       <Button 
-                        variant={activeClip.overlay?.show ? "default" : "outline"} 
+                        variant={activeClip?.overlay?.show ? "default" : "outline"} 
                         className="justify-start gap-2 h-10 px-3 transition-all"
                         onClick={() => {
-                          const newClips = clips.map(c => c.id === activeClipId ? {...c, overlay: {...c.overlay, show: !c.overlay?.show}} : c);
+                          const newOverlay = {...activeClip?.overlay, show: !activeClip?.overlay?.show, text: activeClip?.overlay?.text || activeClip?.title};
+                          const newClips = clips.map(c => c.id === activeClipId ? {...c, overlay: newOverlay} : c);
                           setClips(newClips);
+                          if (activeClipId) saveClip(activeClipId, { overlay: newOverlay });
                         }}
                       >
                         <Type className="h-4 w-4" /> Title Card
                       </Button>
                       <Button 
-                        variant={activeClip.captions ? "default" : "outline"} 
+                        variant={activeClip?.captions ? "default" : "outline"} 
                         className="justify-start gap-2 h-10 px-3 transition-all"
                         onClick={() => {
-                          const newClips = clips.map(c => c.id === activeClipId ? {...c, captions: c.captions ? "" : "Entering magic link credentials..."} : c);
+                          const newCaptions = activeClip.captions ? "" : "Entering magic link credentials...";
+                          const newClips = clips.map(c => c.id === activeClipId ? {...c, captions: newCaptions} : c);
                           setClips(newClips);
+                          if (activeClipId) saveClip(activeClipId, { captions: newCaptions });
                         }}
                       >
                         <MessageSquare className="h-4 w-4" /> Captions
@@ -488,7 +537,10 @@ export default function DemoDetailPage() {
                     {["#000000", "#7c3aed", "#3b82f6", "#10b981"].map((color) => (
                       <button 
                         key={color} 
-                        onClick={() => setBrandColor(color)}
+                        onClick={() => {
+                          setBrandColor(color)
+                          saveDemo({ brand_color: color })
+                        }}
                         className={`h-10 rounded-lg border-2 transition-all shadow-sm ${brandColor === color ? 'border-primary scale-110' : 'border-transparent hover:border-primary/50'}`} 
                         style={{ backgroundColor: color }}
                       />
@@ -530,67 +582,5 @@ export default function DemoDetailPage() {
         </div>
       </div>
     </div>
-  )
-}
-
-function Loader2(props: any) {
-  return (
-    <svg
-      {...props}
-      xmlns="http://www.w3.org/2000/svg"
-      width="24"
-      height="24"
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="2"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-    >
-      <path d="M21 12a9 9 0 1 1-6.219-8.56" />
-    </svg>
-  )
-}
-
-function MousePointer2(props: any) {
-  return (
-    <svg
-      {...props}
-      xmlns="http://www.w3.org/2000/svg"
-      width="24"
-      height="24"
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="2"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-    >
-      <path d="M4.01 4.01 10 20l4-6 6-4Z" />
-      <path d="m13 13 3 3" />
-    </svg>
-  )
-}
-
-function Sparkles(props: any) {
-  return (
-    <svg
-      {...props}
-      xmlns="http://www.w3.org/2000/svg"
-      width="24"
-      height="24"
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="2"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-    >
-      <path d="m12 3-1.912 5.813a2 2 0 0 1-1.275 1.275L3 12l5.813 1.912a2 2 0 0 1 1.275 1.275L12 21l1.912-5.813a2 2 0 0 1 1.275-1.275L21 12l-5.813-1.912a2 2 0 0 1-1.275-1.275L12 3Z" />
-      <path d="M5 3v4" />
-      <path d="M19 17v4" />
-      <path d="M3 5h4" />
-      <path d="M17 19h4" />
-    </svg>
   )
 }
