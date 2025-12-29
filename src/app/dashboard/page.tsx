@@ -155,7 +155,11 @@ export default function DashboardPage() {
                         </DropdownMenuTrigger>
                         <DropdownMenuContent align="end">
                           <DropdownMenuItem>Edit Settings</DropdownMenuItem>
-                          <DropdownMenuItem>Share Demo</DropdownMenuItem>
+                          <DropdownMenuItem asChild>
+                            <Link href={`/share/${demo.id}`}>
+                              Share Demo
+                            </Link>
+                          </DropdownMenuItem>
                           <DropdownMenuItem className="text-destructive">Delete</DropdownMenuItem>
                         </DropdownMenuContent>
                       </DropdownMenu>
