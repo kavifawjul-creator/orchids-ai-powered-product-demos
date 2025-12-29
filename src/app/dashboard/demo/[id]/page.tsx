@@ -84,6 +84,7 @@ export default function DemoDetailPage() {
   const [isCopied, setIsCopied] = useState(false)
   const [playbackProgress, setPlaybackProgress] = useState(33)
   const [isMagicGenerating, setIsMagicGenerating] = useState(false)
+  const [brandColor, setBrandColor] = useState("#7c3aed")
 
   const activeClip = clips.find(c => c.id === activeClipId) || clips[0]
 
