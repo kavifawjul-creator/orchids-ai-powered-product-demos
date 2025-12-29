@@ -253,7 +253,8 @@ export default function DemoDetailPage() {
               <div className="space-y-4">
                 <div className="h-1.5 w-full bg-white/20 rounded-full overflow-hidden cursor-pointer">
                   <motion.div 
-                    className="h-full bg-primary" 
+                    className="h-full" 
+                    style={{ backgroundColor: brandColor }}
                     animate={{ width: isPlaying ? "100%" : `${playbackProgress}%` }}
                     transition={isPlaying ? { duration: 10, ease: "linear" } : { duration: 0.3 }}
                   />
