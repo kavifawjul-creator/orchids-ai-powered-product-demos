@@ -215,15 +215,15 @@ export default function GeneratePage() {
                     <p className="text-muted-foreground mb-8 max-w-sm">
                       We've successfully autonomous-recorded 3 key milestones and generated a high-fidelity demo video.
                     </p>
-                    <div className="flex gap-4">
-                      <Button size="lg" className="rounded-full px-8" onClick={() => router.push('/dashboard')}>
-                        Go to Dashboard
-                      </Button>
-                      <Button size="lg" variant="outline" className="rounded-full px-8" onClick={() => router.push('/dashboard/demos')}>
-                        View Demo
-                        <ArrowRight className="ml-2 h-4 w-4" />
-                      </Button>
-                    </div>
+                      <div className="flex gap-4">
+                        <Button size="lg" className="rounded-full px-8" onClick={() => router.push('/dashboard')}>
+                          Go to Dashboard
+                        </Button>
+                        <Button size="lg" variant="outline" className="rounded-full px-8" onClick={() => router.push('/dashboard/demo/1')}>
+                          View Demo
+                          <ArrowRight className="ml-2 h-4 w-4" />
+                        </Button>
+                      </div>
                   </motion.div>
                 )}
               </AnimatePresence>
