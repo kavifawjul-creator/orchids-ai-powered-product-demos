@@ -428,7 +428,8 @@ export default function DemoDetailPage() {
                     {["#000000", "#7c3aed", "#3b82f6", "#10b981"].map((color) => (
                       <button 
                         key={color} 
-                        className="h-10 rounded-lg border-2 border-transparent hover:border-primary transition-all shadow-sm" 
+                        onClick={() => setBrandColor(color)}
+                        className={`h-10 rounded-lg border-2 transition-all shadow-sm ${brandColor === color ? 'border-primary scale-110' : 'border-transparent hover:border-primary/50'}`} 
                         style={{ backgroundColor: color }}
                       />
                     ))}
