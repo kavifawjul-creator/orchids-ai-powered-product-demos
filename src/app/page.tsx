@@ -406,9 +406,11 @@ export default function Home() {
               viewport={{ once: true }}
               transition={{ delay: 0.2 }}
             >
-              <Button size="lg" variant="secondary" className="h-16 rounded-full px-10 text-xl font-bold shadow-2xl hover:scale-105 transition-transform">
-                Start Building with AutoVidAI
-              </Button>
+              <Link href="/dashboard/new">
+                <Button size="lg" variant="secondary" className="h-16 rounded-full px-10 text-xl font-bold shadow-2xl hover:scale-105 transition-transform">
+                  Start Building with AutoVidAI
+                </Button>
+              </Link>
             </motion.div>
             
             <div className="mt-16 flex flex-wrap justify-center gap-8 opacity-60">
