@@ -46,7 +46,34 @@ import {
 import { Switch } from "@/components/ui/switch"
 
 const initialClips = [
-  // ... rest of the code remains same
+  {
+    id: "clip-1",
+    title: "Introduction & Login",
+    duration: "0:12",
+    thumbnail: "https://images.unsplash.com/photo-1614332287897-cdc485fa562d?w=200&h=112&fit=crop",
+    narration: "We'll start by showing the simple login process with magic links.",
+  },
+  {
+    id: "clip-2",
+    title: "Analytics Dashboard Overview",
+    duration: "0:45",
+    thumbnail: "https://images.unsplash.com/photo-1551288049-bbda3865c170?w=200&h=112&fit=crop",
+    narration: "The dashboard provides a real-time view of all your key performance indicators.",
+  },
+  {
+    id: "clip-3",
+    title: "Custom Report Generation",
+    duration: "1:15",
+    thumbnail: "https://images.unsplash.com/photo-1460925895917-afdab827c52f?w=200&h=112&fit=crop",
+    narration: "Users can generate complex reports in seconds using our AI-assisted query builder.",
+  },
+  {
+    id: "clip-4",
+    title: "Closing & Call to Action",
+    duration: "0:10",
+    thumbnail: "https://images.unsplash.com/photo-1531297484001-80022131f5a1?w=200&h=112&fit=crop",
+    narration: "Get started today for free and transform your data into insights.",
+  },
 ]
 
 export default function DemoDetailPage() {
@@ -142,23 +169,6 @@ export default function DemoDetailPage() {
             </DialogContent>
           </Dialog>
 
-          <Button className="gap-2">
-            <Download className="h-4 w-4" /> Export
-          </Button>
-        </div>
-      </div>
-            <p className="text-sm text-muted-foreground flex items-center gap-2">
-              <Clock className="h-3 w-3" /> Updated 2 hours ago • github.com/acme/app
-            </p>
-          </div>
-        </div>
-        <div className="flex items-center gap-2">
-          <Button variant="outline" className="gap-2">
-            <Eye className="h-4 w-4" /> Preview
-          </Button>
-          <Button variant="outline" className="gap-2">
-            <Share2 className="h-4 w-4" /> Share
-          </Button>
           <Button className="gap-2">
             <Download className="h-4 w-4" /> Export
           </Button>
