@@ -28,9 +28,6 @@ export default function Home() {
   };
 
   const staggerContainer = {
-    initial: "initial",
-    whileInView: "animate",
-    viewport: { once: true },
     animate: {
       transition: {
         staggerChildren: 0.1
@@ -67,7 +64,8 @@ export default function Home() {
           <motion.div 
             className="container px-4 text-center md:px-6"
             initial="initial"
-            animate="animate"
+            whileInView="animate"
+            viewport={{ once: true }}
             variants={staggerContainer}
           >
             <motion.div variants={fadeIn}>
