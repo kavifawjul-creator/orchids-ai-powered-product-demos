@@ -7,6 +7,7 @@ from ..services.intent.service import intent_service
 from ..services.agent.service import agent_service
 from ..services.recorder.service import recorder_service
 from ..models.schemas import ProjectStatus, DemoStatus
+from ..workers.tasks import generate_demo_task
 
 router = APIRouter()
 
