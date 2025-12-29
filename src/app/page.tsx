@@ -98,9 +98,11 @@ export default function Home() {
             </motion.p>
             
             <motion.div className="mt-10 flex flex-col items-center justify-center gap-4 sm:flex-row" variants={fadeIn}>
-              <Button size="lg" className="h-14 rounded-full px-8 text-lg font-semibold shadow-xl shadow-primary/20">
-                Create Your First Demo
-              </Button>
+              <Link href="/dashboard/new">
+                <Button size="lg" className="h-14 rounded-full px-8 text-lg font-semibold shadow-xl shadow-primary/20">
+                  Create Your First Demo
+                </Button>
+              </Link>
               <Button size="lg" variant="outline" className="h-14 rounded-full px-8 text-lg font-semibold">
                 Watch it in Action
               </Button>
