@@ -44,27 +44,44 @@ export default function GeneratePage() {
   const repo = searchParams.get("repo") || "github.com/acme/app"
   const prompt = searchParams.get("prompt") || "Show the analytics flow."
 
-  const [activeSteps, setActiveSteps] = React.useState<typeof simulationSteps>([])
+  const dynamicSteps = React.useMemo(() => [
+    { type: "reasoning", text: `Initializing sandbox for ${repo.split('/').pop()}...`, delay: 800 },
+    { type: "action", text: "Security sandbox established. Isolation level: High.", delay: 1800 },
+    { type: "reasoning", text: "Analyzing repository structure...", delay: 2800 },
+    { type: "action", text: "Detected Next.js framework. Identifying routes...", delay: 3800 },
+    { type: "reasoning", text: `Prompt analysis: "${prompt}"`, delay: 4800 },
+    { type: "action", text: "Starting headless browser at http://localhost:3000/dashboard", delay: 5800 },
+    { type: "reasoning", text: "Locating navigation elements...", delay: 7300 },
+    { type: "action", text: "Interaction: Hovering over main navigation.", delay: 8800 },
+    { type: "action", text: "Interaction: Clicking on target module.", delay: 10300 },
+    { type: "milestone", text: "RECORDED: Primary workflow entry.", delay: 11800 },
+    { type: "reasoning", text: "Capturing component state and interactions.", delay: 13300 },
+    { type: "action", text: "Interaction: Performing requested demo steps.", delay: 14800 },
+    { type: "milestone", text: "RECORDED: Feature interaction sequence.", delay: 16800 },
+    { type: "reasoning", text: "Finalizing autonomous recording and stitching high-fidelity clips.", delay: 18800 },
+  ], [repo, prompt])
+
+  const [activeSteps, setActiveSteps] = React.useState<typeof dynamicSteps>([])
   const [progress, setProgress] = React.useState(0)
   const [isFinished, setIsFinished] = React.useState(false)
   const [currentBrowserAction, setCurrentBrowserAction] = React.useState("Idle")
   const [milestonesCount, setMilestonesCount] = React.useState(0)
 
   React.useEffect(() => {
-    simulationSteps.forEach((step, index) => {
+    dynamicSteps.forEach((step, index) => {
       setTimeout(() => {
         setActiveSteps(prev => [...prev, step])
-        setProgress(((index + 1) / simulationSteps.length) * 100)
+        setProgress(((index + 1) / dynamicSteps.length) * 100)
         
         if (step.type === "action") setCurrentBrowserAction(step.text)
         if (step.type === "milestone") setMilestonesCount(prev => prev + 1)
         
-        if (index === simulationSteps.length - 1) {
-          setTimeout(() => setIsFinished(true), 1500)
+        if (index === dynamicSteps.length - 1) {
+          setTimeout(() => setIsFinished(true), 2000)
         }
       }, step.delay)
     })
-  }, [])
+  }, [dynamicSteps])
 
   return (
     <div className="max-w-6xl mx-auto space-y-6 pb-12">
