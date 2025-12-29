@@ -187,6 +187,51 @@ class BrowserSession:
     
     def _on_error(self, error):
         self._record_event("error", value=str(error))
+    
+    async def stream_frames(self, fps: int = 2) -> AsyncGenerator[Dict[str, Any], None]:
+        interval = 1.0 / fps
+        frame_count = 0
+        
+        while self.page and not self.page.is_closed():
+            try:
+                screenshot = await self.page.screenshot(type="jpeg", quality=70)
+                frame_b64 = base64.b64encode(screenshot).decode("utf-8")
+                frame_count += 1
+                
+                yield {
+                    "type": "frame",
+                    "frame": frame_b64,
+                    "timestamp": self._get_timestamp(),
+                    "frame_number": frame_count,
+                    "url": self.page.url
+                }
+                
+                await asyncio.sleep(interval)
+            except Exception as e:
+                yield {
+                    "type": "error",
+                    "error": str(e),
+                    "timestamp": self._get_timestamp()
+                }
+                break
+    
+    async def capture_frame_with_metadata(self) -> Dict[str, Any]:
+        if not self.page:
+            return {"success": False, "error": "No active page"}
+        
+        try:
+            screenshot = await self.page.screenshot(type="jpeg", quality=80)
+            frame_b64 = base64.b64encode(screenshot).decode("utf-8")
+            
+            return {
+                "success": True,
+                "frame": frame_b64,
+                "timestamp": self._get_timestamp(),
+                "url": self.page.url,
+                "title": await self.page.title()
+            }
+        except Exception as e:
+            return {"success": False, "error": str(e)}
 
 
 class BrowserService:
