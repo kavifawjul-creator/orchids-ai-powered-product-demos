@@ -58,12 +58,12 @@ export default function DashboardPage() {
             Manage your autonomous product demos and generation engine.
           </p>
         </div>
-        <div className="flex items-center gap-2">
-          <Button size="lg" className="rounded-full shadow-lg shadow-primary/20">
-            <PlusCircle className="mr-2 h-5 w-5" />
-            New Demo
-          </Button>
-        </div>
+            <Link href="/dashboard/new">
+              <Button size="lg" className="rounded-full shadow-lg shadow-primary/20">
+                <PlusCircle className="mr-2 h-5 w-5" />
+                New Demo
+              </Button>
+            </Link>
       </div>
 
       <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
