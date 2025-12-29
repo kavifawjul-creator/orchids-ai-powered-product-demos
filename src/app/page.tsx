@@ -54,7 +54,9 @@ export default function Home() {
             <a href="#solution" className="text-sm font-medium text-muted-foreground transition-colors hover:text-primary">Solution</a>
             <a href="#vision" className="text-sm font-medium text-muted-foreground transition-colors hover:text-primary">Vision</a>
           </nav>
-          <Button size="sm" className="rounded-full">Get Started</Button>
+          <Link href="/dashboard">
+            <Button size="sm" className="rounded-full">Get Started</Button>
+          </Link>
         </div>
       </header>
 
