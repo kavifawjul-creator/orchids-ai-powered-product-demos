@@ -321,6 +321,32 @@ async def get_session_screenshot(session_id: str):
     
     return {"screenshot": screenshot}
 
+@router.get("/sessions/{session_id}/status")
+async def get_session_status(session_id: str):
+    status = await agent_service.get_session_status(session_id)
+    if not status:
+        raise HTTPException(status_code=404, detail="Session not found")
+    return status
+
+@router.get("/demos/{demo_id}/status")
+async def get_demo_status(demo_id: str):
+    from ..core.database import get_supabase
+    supabase = get_supabase()
+    
+    result = supabase.table("demos").select("id, status, updated_at").eq("id", demo_id).single().execute()
+    if not result.data:
+        raise HTTPException(status_code=404, detail="Demo not found")
+    
+    for session_id, session in agent_service._sessions.items():
+        if session.demo_id == demo_id:
+            status = await agent_service.get_session_status(session_id)
+            return {
+                **result.data,
+                "session": status
+            }
+    
+    return result.data
+
 @router.get("/health")
 async def health_check():
     return {"status": "healthy", "service": "autovid-backend"}
