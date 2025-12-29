@@ -211,32 +211,74 @@ export default function DemoDetailPage() {
         {/* Main Editor Area */}
         <div className="lg:col-span-8 flex flex-col gap-6 overflow-hidden">
           {/* Video Player Placeholder */}
-          <Card className="flex-1 bg-black overflow-hidden relative group border-none shadow-2xl rounded-2xl aspect-video max-h-[500px]">
-            <AnimatePresence mode="wait">
-              <motion.div
-                key={activeClipId}
-                initial={{ opacity: 0 }}
-                animate={{ opacity: 1 }}
-                exit={{ opacity: 0 }}
-                className="absolute inset-0"
-              >
-                <img 
-                  src={activeClip.thumbnail} 
-                  alt={activeClip.title} 
-                  className="w-full h-full object-cover opacity-60"
-                />
-              </motion.div>
-            </AnimatePresence>
+            <Card className="flex-1 bg-black overflow-hidden relative group border-none shadow-2xl rounded-2xl aspect-video max-h-[500px]">
+              <AnimatePresence mode="wait">
+                <motion.div
+                  key={activeClipId}
+                  initial={{ opacity: 0 }}
+                  animate={{ opacity: 1 }}
+                  exit={{ opacity: 0 }}
+                  className="absolute inset-0"
+                >
+                  <img 
+                    src={activeClip.thumbnail} 
+                    alt={activeClip.title} 
+                    className="w-full h-full object-cover opacity-60"
+                  />
+                </motion.div>
+              </AnimatePresence>
 
-            <div className="absolute inset-0 flex items-center justify-center">
-              <div className="text-center space-y-4 z-10">
-                {!isPlaying && <Play className="h-16 w-16 text-white/80 mx-auto drop-shadow-lg cursor-pointer hover:scale-110 transition-transform" onClick={() => setIsPlaying(true)} />}
-                <div className="space-y-1">
-                   <p className="text-white font-bold text-xl drop-shadow-md">{activeClip.title}</p>
-                   <p className="text-white/60 font-mono text-xs">autonomous_recording_clip_{activeClipId.split('-')[1]}.mp4</p>
+              {/* Title Card Overlay */}
+              <AnimatePresence>
+                {activeClip.overlay?.show && (
+                  <motion.div 
+                    initial={{ opacity: 0, scale: 0.9 }}
+                    animate={{ opacity: 1, scale: 1 }}
+                    exit={{ opacity: 0, scale: 1.1 }}
+                    className="absolute inset-0 flex items-center justify-center z-20 bg-black/40 backdrop-blur-[2px]"
+                  >
+                    <div className="text-center space-y-4">
+                      <motion.div 
+                        initial={{ width: 0 }}
+                        animate={{ width: "100%" }}
+                        className="h-1 bg-primary mx-auto"
+                      />
+                      <h2 className="text-4xl md:text-6xl font-black tracking-tighter text-white uppercase italic">
+                        {activeClip.overlay.text}
+                      </h2>
+                      <motion.div 
+                        initial={{ width: 0 }}
+                        animate={{ width: "100%" }}
+                        transition={{ delay: 0.2 }}
+                        className="h-1 bg-primary mx-auto"
+                      />
+                    </div>
+                  </motion.div>
+                )}
+              </AnimatePresence>
+
+              {/* Captions Overlay */}
+              {activeClip.captions && isPlaying && (
+                <div className="absolute bottom-24 left-0 right-0 flex justify-center z-30 px-12">
+                  <motion.div 
+                    initial={{ y: 20, opacity: 0 }}
+                    animate={{ y: 0, opacity: 1 }}
+                    className="bg-black/80 backdrop-blur-md px-4 py-2 rounded-lg border border-white/10 text-white text-sm font-medium text-center shadow-2xl"
+                  >
+                    {activeClip.captions}
+                  </motion.div>
+                </div>
+              )}
+
+              <div className="absolute inset-0 flex items-center justify-center">
+                <div className="text-center space-y-4 z-10">
+                  {!isPlaying && <Play className="h-16 w-16 text-white/80 mx-auto drop-shadow-lg cursor-pointer hover:scale-110 transition-transform" onClick={() => setIsPlaying(true)} />}
+                  <div className="space-y-1">
+                     <p className="text-white font-bold text-xl drop-shadow-md">{activeClip.title}</p>
+                     <p className="text-white/60 font-mono text-xs">autonomous_recording_clip_{activeClipId.split('-')[1]}.mp4</p>
+                  </div>
                 </div>
               </div>
-            </div>
 
             {/* AI Agent Cursor Simulation (only when playing) */}
             {isPlaying && (
