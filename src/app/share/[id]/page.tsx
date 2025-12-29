@@ -1,6 +1,4 @@
 
-"use client"
-
 import { useState, useEffect } from "react"
 import { useParams } from "next/navigation"
 import { motion, AnimatePresence } from "framer-motion"
@@ -15,58 +13,56 @@ import {
   Globe,
   Share2,
   ExternalLink,
-  Github
+  Github,
+  Loader2,
+  MousePointer2
 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import { Card } from "@/components/ui/card"
 import Link from "next/link"
-
-const demoData = {
-  title: "Onboarding Flow Walkthrough",
-  repo: "acme-app-frontend",
-  description: "A complete walkthrough of the user onboarding process, from signup to the first dashboard view. This demo was generated autonomously by analyzing the codebase.",
-  author: "Acme Engineering",
-  views: "1.2k",
-  date: "2 days ago",
-  brandColor: "#7c3aed",
-  clips: [
-    {
-      id: "clip-1",
-      title: "Introduction & Login",
-      duration: "0:12",
-      thumbnail: "https://images.unsplash.com/photo-1614332287897-cdc485fa562d?w=800&h=450&fit=crop",
-    },
-    {
-      id: "clip-2",
-      title: "Analytics Dashboard Overview",
-      duration: "0:45",
-      thumbnail: "https://images.unsplash.com/photo-1551288049-bbda3865c170?w=800&h=450&fit=crop",
-    },
-    {
-      id: "clip-3",
-      title: "Custom Report Generation",
-      duration: "1:15",
-      thumbnail: "https://images.unsplash.com/photo-1460925895917-afdab827c52f?w=800&h=450&fit=crop",
-    }
-  ]
-}
+import { supabase } from "@/lib/supabase"
 
 export default function SharePage() {
   const { id } = useParams()
+  const [demo, setDemo] = useState<any>(null)
+  const [clips, setClips] = useState<any[]>([])
+  const [loading, setLoading] = useState(true)
   const [isPlaying, setIsPlaying] = useState(false)
   const [activeClipIndex, setActiveClipIndex] = useState(0)
   const [progress, setProgress] = useState(0)
 
-  const activeClip = demoData.clips[activeClipIndex]
+  useEffect(() => {
+    async function fetchData() {
+      const { data: demoData } = await supabase
+        .from('demos')
+        .select('*')
+        .eq('id', id)
+        .single()
+      
+      if (demoData) setDemo(demoData)
+
+      const { data: clipsData } = await supabase
+        .from('clips')
+        .select('*')
+        .eq('demo_id', id)
+        .order('order_index', { ascending: true })
+      
+      if (clipsData) setClips(clipsData)
+      setLoading(false)
+    }
+    fetchData()
+  }, [id])
+
+  const activeClip = clips[activeClipIndex]
 
   useEffect(() => {
     let interval: any
-    if (isPlaying) {
+    if (isPlaying && clips.length > 0) {
       interval = setInterval(() => {
         setProgress((prev) => {
           if (prev >= 100) {
-            if (activeClipIndex < demoData.clips.length - 1) {
+            if (activeClipIndex < clips.length - 1) {
               setActiveClipIndex(activeClipIndex + 1)
               return 0
             } else {
@@ -74,12 +70,24 @@ export default function SharePage() {
               return 100
             }
           }
-          return prev + 0.5
+          return prev + 1 // Accelerated for preview
         })
-      }, 50)
+      }, 100)
     }
     return () => clearInterval(interval)
-  }, [isPlaying, activeClipIndex])
+  }, [isPlaying, activeClipIndex, clips])
+
+  if (loading) {
+    return <div className="min-h-screen bg-black flex items-center justify-center">
+      <Loader2 className="h-8 w-8 animate-spin text-primary" />
+    </div>
+  }
+
+  if (!demo || clips.length === 0) {
+    return <div className="min-h-screen bg-black flex items-center justify-center text-white">
+      Demo not found or empty
+    </div>
+  }
 
   return (
     <div className="min-h-screen bg-black text-white selection:bg-primary selection:text-white">
@@ -120,12 +128,53 @@ export default function SharePage() {
                     className="absolute inset-0"
                   >
                     <img 
-                      src={activeClip.thumbnail} 
+                      src={activeClip.thumbnail_url} 
                       alt={activeClip.title} 
                       className="w-full h-full object-cover opacity-80"
                     />
                   </motion.div>
                 </AnimatePresence>
+
+                {/* Overlays */}
+                <AnimatePresence>
+                  {activeClip.overlay?.show && (
+                    <motion.div 
+                      initial={{ opacity: 0, scale: 0.9 }}
+                      animate={{ opacity: 1, scale: 1 }}
+                      exit={{ opacity: 0, scale: 1.1 }}
+                      className="absolute inset-0 flex items-center justify-center z-20 bg-black/40 backdrop-blur-[2px]"
+                    >
+                      <div className="text-center space-y-4">
+                        <motion.div 
+                          initial={{ width: 0 }}
+                          animate={{ width: "100%" }}
+                          className="h-1 bg-primary mx-auto"
+                        />
+                        <h2 className="text-4xl md:text-6xl font-black tracking-tighter text-white uppercase italic">
+                          {activeClip.overlay.text}
+                        </h2>
+                        <motion.div 
+                          initial={{ width: 0 }}
+                          animate={{ width: "100%" }}
+                          transition={{ delay: 0.2 }}
+                          className="h-1 bg-primary mx-auto"
+                        />
+                      </div>
+                    </motion.div>
+                  )}
+                </AnimatePresence>
+
+                {activeClip.captions && isPlaying && (
+                  <div className="absolute bottom-24 left-0 right-0 flex justify-center z-30 px-12">
+                    <motion.div 
+                      initial={{ y: 20, opacity: 0 }}
+                      animate={{ y: 0, opacity: 1 }}
+                      className="bg-black/80 backdrop-blur-md px-4 py-2 rounded-lg border border-white/10 text-white text-sm font-medium text-center shadow-2xl"
+                    >
+                      {activeClip.captions}
+                    </motion.div>
+                  </div>
+                )}
 
                 {/* Overlay UI */}
                 <div className="absolute inset-0 flex flex-col justify-between p-6 z-10">
@@ -153,7 +202,8 @@ export default function SharePage() {
                     {/* Progress Bar */}
                     <div className="h-1.5 w-full bg-white/10 rounded-full overflow-hidden cursor-pointer backdrop-blur-sm">
                       <motion.div 
-                        className="h-full bg-primary shadow-[0_0_15px_rgba(124,58,237,0.5)]" 
+                        className="h-full" 
+                        style={{ backgroundColor: demo.brand_color || "#7c3aed", boxShadow: `0 0 15px ${demo.brand_color || "#7c3aed"}80` }}
                         animate={{ width: `${progress}%` }}
                         transition={{ duration: 0.1 }}
                       />
@@ -175,7 +225,7 @@ export default function SharePage() {
                           <SkipForward className="h-5 w-5 fill-current" />
                         </button>
                         <span className="text-sm font-mono tracking-tighter ml-2">
-                          {Math.floor(progress / 20)}:{(Math.floor(progress % 20)).toString().padStart(2, '0')} / 2:12
+                          0:{Math.floor(progress / 5).toString().padStart(2, '0')} / {activeClip.duration}
                         </span>
                       </div>
                       <div className="flex items-center gap-4">
@@ -211,15 +261,15 @@ export default function SharePage() {
             <div className="space-y-6">
               <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
                 <div className="space-y-2">
-                  <h1 className="text-3xl md:text-4xl font-extrabold tracking-tight">{demoData.title}</h1>
+                  <h1 className="text-3xl md:text-4xl font-extrabold tracking-tight">{demo.title}</h1>
                   <div className="flex items-center gap-4 text-white/50 text-sm font-medium">
                     <span className="flex items-center gap-1.5">
-                      <Zap className="h-4 w-4 text-yellow-500" /> {demoData.author}
+                      <Zap className="h-4 w-4 text-yellow-500" /> {demo.author || "AutoVid AI"}
                     </span>
                     <span>•</span>
-                    <span>{demoData.views} views</span>
+                    <span>1.2k views</span>
                     <span>•</span>
-                    <span>{demoData.date}</span>
+                    <span>{new Date(demo.created_at).toLocaleDateString()}</span>
                   </div>
                 </div>
                 <div className="flex items-center gap-2">
@@ -236,11 +286,11 @@ export default function SharePage() {
 
               <div className="space-y-4">
                 <p className="text-lg text-white/70 leading-relaxed max-w-3xl">
-                  {demoData.description}
+                  {demo.description || "No description provided for this autonomous demo."}
                 </p>
                 <div className="flex items-center gap-2 font-mono text-xs text-primary bg-primary/10 w-fit px-3 py-1 rounded-full border border-primary/20">
                   <ExternalLink className="h-3 w-3" />
-                  github.com/{demoData.repo}
+                  {demo.repo_url}
                 </div>
               </div>
             </div>
@@ -254,7 +304,7 @@ export default function SharePage() {
                 Demo Breakdown
               </h3>
               <div className="space-y-3">
-                {demoData.clips.map((clip, index) => (
+                {clips.map((clip, index) => (
                   <button 
                     key={clip.id}
                     onClick={() => {
@@ -266,7 +316,7 @@ export default function SharePage() {
                   >
                     <div className="flex gap-4">
                       <div className="relative w-24 aspect-video rounded-lg overflow-hidden flex-shrink-0">
-                        <img src={clip.thumbnail} alt={clip.title} className="w-full h-full object-cover" />
+                        <img src={clip.thumbnail_url} alt={clip.title} className="w-full h-full object-cover" />
                         <div className="absolute bottom-1 right-1 bg-black/80 px-1 rounded text-[10px] font-mono">
                           {clip.duration}
                         </div>
@@ -316,26 +366,6 @@ export default function SharePage() {
         </div>
       </footer>
     </div>
-  )
-}
-
-function MousePointer2(props: any) {
-  return (
-    <svg
-      {...props}
-      xmlns="http://www.w3.org/2000/svg"
-      width="24"
-      height="24"
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="2"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-    >
-      <path d="M4.01 4.01 10 20l4-6 6-4Z" />
-      <path d="m13 13 3 3" />
-    </svg>
   )
 }
 
