@@ -46,20 +46,24 @@ import {
 import { Switch } from "@/components/ui/switch"
 
 const initialClips = [
-  {
-    id: "clip-1",
-    title: "Introduction & Login",
-    duration: "0:12",
-    thumbnail: "https://images.unsplash.com/photo-1614332287897-cdc485fa562d?w=200&h=112&fit=crop",
-    narration: "We'll start by showing the simple login process with magic links.",
-  },
-  {
-    id: "clip-2",
-    title: "Analytics Dashboard Overview",
-    duration: "0:45",
-    thumbnail: "https://images.unsplash.com/photo-1551288049-bbda3865c170?w=200&h=112&fit=crop",
-    narration: "The dashboard provides a real-time view of all your key performance indicators.",
-  },
+    {
+      id: "clip-1",
+      title: "Introduction & Login",
+      duration: "0:12",
+      thumbnail: "https://images.unsplash.com/photo-1614332287897-cdc485fa562d?w=200&h=112&fit=crop",
+      narration: "We'll start by showing the simple login process with magic links.",
+      overlay: { text: "Login Flow", show: true },
+      captions: "Authenticating with magic link..."
+    },
+    {
+      id: "clip-2",
+      title: "Analytics Dashboard Overview",
+      duration: "0:45",
+      thumbnail: "https://images.unsplash.com/photo-1551288049-bbda3865c170?w=200&h=112&fit=crop",
+      narration: "The dashboard provides a real-time view of all your key performance indicators.",
+      overlay: { text: "Dashboard Overview", show: false },
+      captions: "Loading real-time metrics..."
+    },
   {
     id: "clip-3",
     title: "Custom Report Generation",
