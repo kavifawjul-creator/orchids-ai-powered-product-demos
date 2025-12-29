@@ -385,7 +385,7 @@ export default function Home() {
               viewport={{ once: true }}
             >
               “Software should be able to explain itself.”
-            </h2>
+            </motion.h2>
             <motion.p 
               className="max-w-2xl mx-auto text-xl opacity-90 mb-12"
               initial={{ opacity: 0, y: 20 }}
