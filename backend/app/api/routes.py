@@ -148,11 +148,15 @@ async def generate_demo(request: GenerateDemoRequest, background_tasks: Backgrou
     
     supabase = get_supabase()
     
-    project = await project_service.create_project(
-        repo_url=request.repo_url,
-        title=request.title
-    )
+    # 1. Check if project already exists
+    project = await project_service.get_project_by_repo(request.repo_url)
+    if not project:
+        project = await project_service.create_project(
+            repo_url=request.repo_url,
+            title=request.title
+        )
     
+    # 2. Create demo record
     demo_id = str(uuid.uuid4())
     demo_data = {
         "id": demo_id,
@@ -165,64 +169,25 @@ async def generate_demo(request: GenerateDemoRequest, background_tasks: Backgrou
     }
     supabase.table("demos").insert(demo_data).execute()
     
-    async def generation_pipeline():
-        try:
-            supabase.table("demos").update({"status": "building"}).eq("id", demo_id).execute()
-            
-            sandbox = await sandbox_service.create_sandbox(project)
-            
-            if not sandbox.preview_url:
-                raise Exception("Failed to get preview URL")
-            
-            supabase.table("demos").update({"status": "planning"}).eq("id", demo_id).execute()
-            
-            plan = await intent_service.generate_execution_plan(
-                demo_id=demo_id,
-                prompt=request.prompt,
-                app_context=project.metadata.get("build_config")
-            )
-            
-            supabase.table("demos").update({"status": "executing"}).eq("id", demo_id).execute()
-            
-            session = await agent_service.start_session(
-                demo_id=demo_id,
-                project_id=project.id,
-                preview_url=sandbox.preview_url
-            )
-            
-            await recorder_service.start_recording(session.id, demo_id)
-            
-            result = await agent_service.execute_plan(session, plan)
-            
-            await recorder_service.stop_recording(session.id)
-            
-            for feature_result in result.get("results", []):
-                if "feature_id" in feature_result:
-                    await recorder_service.add_milestone(
-                        session.id,
-                        feature_result["feature_id"],
-                        feature_result["feature_name"],
-                        0,
-                        10
-                    )
-            
-            clips = await recorder_service.generate_clips(session.id)
-            
-            supabase.table("demos").update({
-                "status": "Completed",
-                "updated_at": datetime.utcnow().isoformat()
-            }).eq("id", demo_id).execute()
-            
-            await agent_service.stop_session(session.id)
-            
-        except Exception as e:
-            supabase.table("demos").update({
-                "status": "error",
-                "description": f"Error: {str(e)}",
-                "updated_at": datetime.utcnow().isoformat()
-            }).eq("id", demo_id).execute()
-    
-    background_tasks.add_task(generation_pipeline)
+    # 3. Trigger Celery task
+    try:
+        generate_demo_task.delay(
+            demo_id=demo_id,
+            repo_url=request.repo_url,
+            prompt=request.prompt,
+            title=request.title or request.prompt[:50]
+        )
+    except Exception as e:
+        print(f"Failed to enqueue celery task: {e}. Falling back to background task.")
+        # Fallback to background task if celery is not available
+        from ..workers.tasks import _run_generation_pipeline
+        background_tasks.add_task(
+            _run_generation_pipeline,
+            demo_id,
+            request.repo_url,
+            request.prompt,
+            request.title or request.prompt[:50]
+        )
     
     return {
         "demo_id": demo_id,
