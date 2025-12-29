@@ -1,6 +1,7 @@
 import asyncio
 import base64
-from typing import Optional, Dict, Any, List, Callable
+import time
+from typing import Optional, Dict, Any, List, Callable, AsyncGenerator
 from datetime import datetime
 from playwright.async_api import async_playwright, Browser, BrowserContext, Page
 from ...models.schemas import BrowserAction, RecordingEvent
