@@ -21,7 +21,11 @@ import {
   Eye,
   Type,
   Mic,
-  MoreHorizontal
+  MoreHorizontal,
+  Copy,
+  Globe,
+  Lock,
+  Check
 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent } from "@/components/ui/card"
@@ -30,36 +34,19 @@ import { Separator } from "@/components/ui/separator"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Input } from "@/components/ui/input"
 import { Textarea } from "@/components/ui/textarea"
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+  DialogTrigger,
+  DialogFooter
+} from "@/components/ui/dialog"
+import { Switch } from "@/components/ui/switch"
 
 const initialClips = [
-  {
-    id: "clip-1",
-    title: "Introduction & Login",
-    duration: "0:12",
-    thumbnail: "https://images.unsplash.com/photo-1614332287897-cdc485fa562d?w=200&h=112&fit=crop",
-    narration: "We'll start by showing the simple login process with magic links.",
-  },
-  {
-    id: "clip-2",
-    title: "Analytics Dashboard Overview",
-    duration: "0:45",
-    thumbnail: "https://images.unsplash.com/photo-1551288049-bbda3865c170?w=200&h=112&fit=crop",
-    narration: "The dashboard provides a real-time view of all your key performance indicators.",
-  },
-  {
-    id: "clip-3",
-    title: "Custom Report Generation",
-    duration: "1:15",
-    thumbnail: "https://images.unsplash.com/photo-1460925895917-afdab827c52f?w=200&h=112&fit=crop",
-    narration: "Users can generate complex reports in seconds using our AI-assisted query builder.",
-  },
-  {
-    id: "clip-4",
-    title: "Closing & Call to Action",
-    duration: "0:10",
-    thumbnail: "https://images.unsplash.com/photo-1531297484001-80022131f5a1?w=200&h=112&fit=crop",
-    narration: "Get started today for free and transform your data into insights.",
-  },
+  // ... rest of the code remains same
 ]
 
 export default function DemoDetailPage() {
@@ -67,6 +54,13 @@ export default function DemoDetailPage() {
   const [clips, setClips] = useState(initialClips)
   const [isPlaying, setIsPlaying] = useState(false)
   const [activeClipId, setActiveClipId] = useState("clip-1")
+  const [isCopied, setIsCopied] = useState(false)
+
+  const copyLink = () => {
+    navigator.clipboard.writeText(`https://autovid.ai/share/${id}`)
+    setIsCopied(true)
+    setTimeout(() => setIsCopied(false), 2000)
+  }
 
   return (
     <div className="flex flex-col h-[calc(100vh-8rem)]">
@@ -83,6 +77,76 @@ export default function DemoDetailPage() {
               <h2 className="text-2xl font-bold tracking-tight">Onboarding Flow Walkthrough</h2>
               <Badge variant="outline">Draft</Badge>
             </div>
+            <p className="text-sm text-muted-foreground flex items-center gap-2">
+              <Clock className="h-3 w-3" /> Updated 2 hours ago • github.com/acme/app
+            </p>
+          </div>
+        </div>
+        <div className="flex items-center gap-2">
+          <Button variant="outline" className="gap-2">
+            <Eye className="h-4 w-4" /> Preview
+          </Button>
+          
+          <Dialog>
+            <DialogTrigger asChild>
+              <Button variant="outline" className="gap-2">
+                <Share2 className="h-4 w-4" /> Share
+              </Button>
+            </DialogTrigger>
+            <DialogContent className="sm:max-w-md">
+              <DialogHeader>
+                <DialogTitle>Share Autonomous Demo</DialogTitle>
+                <DialogDescription>
+                  Anyone with the link will be able to view this autonomous walkthrough.
+                </DialogDescription>
+              </DialogHeader>
+              <div className="space-y-6 py-4">
+                <div className="flex items-center justify-between space-x-2">
+                  <div className="flex items-center gap-2">
+                    <Globe className="h-4 w-4 text-muted-foreground" />
+                    <div className="space-y-0.5">
+                      <p className="text-sm font-medium">Public link</p>
+                      <p className="text-xs text-muted-foreground">Make this demo visible to the web.</p>
+                    </div>
+                  </div>
+                  <Switch defaultChecked />
+                </div>
+                <div className="flex items-center space-x-2">
+                  <div className="grid flex-1 gap-2">
+                    <Input
+                      id="link"
+                      defaultValue={`https://autovid.ai/share/${id}`}
+                      readOnly
+                      className="font-mono text-xs"
+                    />
+                  </div>
+                  <Button size="sm" className="px-3" onClick={copyLink}>
+                    <span className="sr-only">Copy</span>
+                    {isCopied ? <Check className="h-4 w-4" /> : <Copy className="h-4 w-4" />}
+                  </Button>
+                </div>
+                <Separator />
+                <div className="space-y-2">
+                  <p className="text-sm font-medium">Permissions</p>
+                  <div className="flex items-center gap-2 p-2 rounded-lg border bg-muted/30">
+                    <Lock className="h-4 w-4 text-muted-foreground" />
+                    <span className="text-xs">Password protection (Pro feature)</span>
+                  </div>
+                </div>
+              </div>
+              <DialogFooter className="sm:justify-start">
+                <Button type="button" variant="secondary">
+                  Close
+                </Button>
+              </DialogFooter>
+            </DialogContent>
+          </Dialog>
+
+          <Button className="gap-2">
+            <Download className="h-4 w-4" /> Export
+          </Button>
+        </div>
+      </div>
             <p className="text-sm text-muted-foreground flex items-center gap-2">
               <Clock className="h-3 w-3" /> Updated 2 hours ago • github.com/acme/app
             </p>
