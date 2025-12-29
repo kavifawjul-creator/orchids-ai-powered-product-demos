@@ -273,7 +273,7 @@ export default function DemoDetailPage() {
                     <button className="hover:text-primary transition-colors">
                       <SkipForward className="h-5 w-5 fill-current" />
                     </button>
-                    <span className="text-sm font-mono">{isPlaying ? "0:04" : "0:24"} / 2:22</span>
+                    <span className="text-sm font-mono">{isPlaying ? "0:04" : activeClip.duration} / 2:22</span>
                   </div>
                   <div className="flex items-center gap-4 text-xs font-mono text-white/60">
                     <span className="flex items-center gap-1">
