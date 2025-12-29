@@ -42,17 +42,11 @@ const data = {
       title: "Dashboard",
       url: "/dashboard",
       icon: LayoutDashboard,
-      isActive: true,
     },
     {
       title: "New Demo",
       url: "/dashboard/new",
       icon: PlusCircle,
-    },
-    {
-      title: "My Demos",
-      url: "/dashboard/demos",
-      icon: Video,
     },
   ],
   secondary: [
