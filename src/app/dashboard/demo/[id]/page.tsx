@@ -1,3 +1,4 @@
+"use client"
 
 import { useState, useEffect } from "react"
 import Link from "next/link"
@@ -122,7 +123,8 @@ export default function DemoDetailPage() {
   }
 
   const copyLink = () => {
-    const url = typeof window !== 'undefined' ? `${window.location.origin}/share/${id}` : `https://autovid.ai/share/${id}`
+    const baseUrl = process.env.NEXT_PUBLIC_APP_URL || (typeof window !== 'undefined' ? window.location.origin : 'http://localhost:3000')
+    const url = `${baseUrl}/share/${id}`
     navigator.clipboard.writeText(url)
     setIsCopied(true)
     setTimeout(() => setIsCopied(false), 2000)
@@ -213,16 +215,16 @@ export default function DemoDetailPage() {
                   </div>
                   <Switch defaultChecked />
                 </div>
-                <div className="flex items-center space-x-2">
-                  <div className="grid flex-1 gap-2">
-                    <Input
-                      id="link"
-                      defaultValue={typeof window !== 'undefined' ? `${window.location.origin}/share/${id}` : `https://autovid.ai/share/${id}`}
-                      readOnly
-                      className="font-mono text-xs"
-                    />
-                  </div>
-                  <Button size="sm" className="px-3" onClick={copyLink}>
+                  <div className="flex items-center space-x-2">
+                    <div className="grid flex-1 gap-2">
+                      <Input
+                        id="link"
+                        defaultValue={typeof window !== 'undefined' ? `${window.location.origin}/share/${id}` : `${process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000'}/share/${id}`}
+                        readOnly
+                        className="font-mono text-xs"
+                      />
+                    </div>
+                    <Button size="sm" className="px-3" onClick={copyLink}>
                     <span className="sr-only">Copy</span>
                     {isCopied ? <Check className="h-4 w-4" /> : <Copy className="h-4 w-4" />}
                   </Button>

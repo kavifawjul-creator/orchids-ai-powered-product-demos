@@ -2,6 +2,7 @@
 
 import * as React from "react"
 import { useSearchParams, useRouter } from "next/navigation"
+import { Suspense } from "react"
 import { motion, AnimatePresence } from "framer-motion"
 import { 
   Terminal, 
@@ -34,6 +35,18 @@ interface DemoStatus {
 }
 
 export default function GeneratePage() {
+  return (
+    <Suspense fallback={
+      <div className="flex items-center justify-center h-full min-h-[400px]">
+        <Loader2 className="h-8 w-8 animate-spin text-primary" />
+      </div>
+    }>
+      <GeneratePageContent />
+    </Suspense>
+  )
+}
+
+function GeneratePageContent() {
   const searchParams = useSearchParams()
   const router = useRouter()
   const repo = searchParams.get("repo") || ""

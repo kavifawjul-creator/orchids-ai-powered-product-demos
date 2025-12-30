@@ -1,6 +1,9 @@
 from celery import Celery
 from ..core.config import settings
 
+if not settings.REDIS_URL:
+    raise RuntimeError("REDIS_URL is required for Celery workers")
+
 celery_app = Celery(
     "autovid",
     broker=settings.REDIS_URL,
