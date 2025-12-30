@@ -46,7 +46,19 @@ export default function SharePage() {
         .eq('id', id)
         .single()
       
-      if (demoData) setDemo(demoData)
+      if (demoData) {
+        setDemo(demoData)
+        // Track view
+        fetch("/api/analytics/track", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            demo_id: id,
+            event_type: "view",
+            metadata: { referrer: document.referrer }
+          })
+        }).catch(console.error)
+      }
 
       const { data: clipsData } = await supabase
         .from('clips')
