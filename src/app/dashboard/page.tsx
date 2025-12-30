@@ -1,4 +1,3 @@
-
 "use client"
 
 import { 
@@ -10,7 +9,9 @@ import {
   Zap,
   MoreVertical,
   ExternalLink,
-  Eye
+  Eye,
+  ChevronDown,
+  Users
 } from "lucide-react"
 import Link from "next/link"
 import { Button } from "@/components/ui/button"
@@ -21,34 +22,9 @@ import {
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuTrigger,
+  DropdownMenuSeparator,
+  DropdownMenuLabel,
 } from "@/components/ui/dropdown-menu"
-
-const recentDemos = [
-  {
-    id: "1",
-    title: "Onboarding Flow Walkthrough",
-    repo: "acme-app-frontend",
-    status: "Completed",
-    date: "2 hours ago",
-    thumbnail: "https://images.unsplash.com/photo-1614332287897-cdc485fa562d?w=400&h=225&fit=crop",
-  },
-  {
-    id: "2",
-    title: "Billing Dashboard Demo",
-    repo: "acme-billing-service",
-    status: "Processing",
-    date: "5 hours ago",
-    thumbnail: "https://images.unsplash.com/photo-1551288049-bbda3865c170?w=400&h=225&fit=crop",
-  },
-  {
-    id: "3",
-    title: "Analytics Feature Highlight",
-    repo: "acme-app-frontend",
-    status: "Completed",
-    date: "Yesterday",
-    thumbnail: "https://images.unsplash.com/photo-1460925895917-afdab827c52f?w=400&h=225&fit=crop",
-  },
-]
 
 import { useState, useEffect } from "react"
 import { supabase } from "@/lib/supabase"
@@ -66,12 +42,11 @@ export default function DashboardPage() {
       const { data: wsData } = await supabase.from('workspaces').select('*')
       if (wsData && wsData.length > 0) {
         setWorkspaces(wsData)
-        setCurrentWorkspace(wsData[0])
+        if (!currentWorkspace) setCurrentWorkspace(wsData[0])
       } else {
-        // Create a default workspace if none exists (demo purposes)
         const { data: newWs } = await supabase.from('workspaces').insert({
-          name: "My Workspace",
-          owner_id: "00000000-0000-0000-0000-000000000000" // Placeholder
+          name: "Personal Workspace",
+          owner_id: "00000000-0000-0000-0000-000000000000"
         }).select().single()
         if (newWs) {
           setWorkspaces([newWs])
@@ -79,21 +54,15 @@ export default function DashboardPage() {
         }
       }
 
-      // 2. Fetch Demos (optionally filter by workspace)
+      // 2. Fetch Demos
       let query = supabase.from('demos').select('*').order('created_at', { ascending: false })
-      if (currentWorkspace) {
-        // query = query.eq('workspace_id', currentWorkspace.id)
-      }
       
       const { data: demosData } = await query
       
       if (demosData) {
         setDemos(demosData)
-        
-        // Count active agents
         const active = demosData.filter(d => ["executing", "recording", "planning", "building"].includes(d.status?.toLowerCase())).length
         
-        // Fetch Views count
         const { count: viewsCount } = await supabase
           .from('analytics')
           .select('*', { count: 'exact', head: true })
@@ -113,18 +82,44 @@ export default function DashboardPage() {
   return (
     <div className="space-y-8">
       <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
-        <div>
-          <h2 className="text-3xl font-bold tracking-tight">Dashboard</h2>
-          <p className="text-muted-foreground">
-            Manage your autonomous product demos and generation engine.
-          </p>
-        </div>
-            <Link href="/dashboard/new">
-              <Button size="lg" className="rounded-full shadow-lg shadow-primary/20">
-                <PlusCircle className="mr-2 h-5 w-5" />
-                New Demo
+        <div className="flex items-center gap-4">
+          <div>
+            <h2 className="text-3xl font-bold tracking-tight">Dashboard</h2>
+            <p className="text-muted-foreground">
+              Manage your autonomous product demos.
+            </p>
+          </div>
+          <div className="h-10 w-[1px] bg-border mx-2 hidden md:block" />
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button variant="outline" className="rounded-full gap-2 px-4 border-primary/20 bg-primary/5 hover:bg-primary/10">
+                <Users size={16} />
+                <span className="font-semibold">{currentWorkspace?.name || "Loading..."}</span>
+                <ChevronDown size={14} className="opacity-50" />
               </Button>
-            </Link>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="start" className="w-56">
+              <DropdownMenuLabel>Switch Workspace</DropdownMenuLabel>
+              <DropdownMenuSeparator />
+              {workspaces.map(ws => (
+                <DropdownMenuItem key={ws.id} onClick={() => setCurrentWorkspace(ws)} className="flex items-center justify-between">
+                  {ws.name}
+                  {currentWorkspace?.id === ws.id && <div className="h-2 w-2 rounded-full bg-primary" />}
+                </DropdownMenuItem>
+              ))}
+              <DropdownMenuSeparator />
+              <DropdownMenuItem className="text-primary font-medium">
+                <PlusCircle size={14} className="mr-2" /> Create New Workspace
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
+        </div>
+        <Link href="/dashboard/new">
+          <Button size="lg" className="rounded-full shadow-lg shadow-primary/20">
+            <PlusCircle className="mr-2 h-5 w-5" />
+            New Demo
+          </Button>
+        </Link>
       </div>
 
       <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
@@ -138,37 +133,36 @@ export default function DashboardPage() {
             <p className="text-xs text-muted-foreground">Across all projects</p>
           </CardContent>
         </Card>
-          <Card>
-            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-              <CardTitle className="text-sm font-medium">Active Agents</CardTitle>
-              <Zap className="h-4 w-4 text-muted-foreground" />
-            </CardHeader>
-            <CardContent>
-              <div className="text-2xl font-bold">{stats.activeAgents}</div>
-              <p className="text-xs text-muted-foreground">Running live sessions</p>
-            </CardContent>
-          </Card>
-          <Card>
-            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-              <CardTitle className="text-sm font-medium">Generation Time</CardTitle>
-              <Clock className="h-4 w-4 text-muted-foreground" />
-            </CardHeader>
-            <CardContent>
-              <div className="text-2xl font-bold">{stats.avgTime}</div>
-              <p className="text-xs text-muted-foreground">Average per demo</p>
-            </CardContent>
-          </Card>
-          <Card>
-            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-              <CardTitle className="text-sm font-medium">Views</CardTitle>
-              <BarChart3 className="h-4 w-4 text-muted-foreground" />
-            </CardHeader>
-            <CardContent>
-              <div className="text-2xl font-bold">{stats.views}</div>
-              <p className="text-xs text-muted-foreground">Across all demos</p>
-            </CardContent>
-          </Card>
-
+        <Card>
+          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+            <CardTitle className="text-sm font-medium">Active Agents</CardTitle>
+            <Zap className="h-4 w-4 text-muted-foreground" />
+          </CardHeader>
+          <CardContent>
+            <div className="text-2xl font-bold">{stats.activeAgents}</div>
+            <p className="text-xs text-muted-foreground">Running live sessions</p>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+            <CardTitle className="text-sm font-medium">Generation Time</CardTitle>
+            <Clock className="h-4 w-4 text-muted-foreground" />
+          </CardHeader>
+          <CardContent>
+            <div className="text-2xl font-bold">{stats.avgTime}</div>
+            <p className="text-xs text-muted-foreground">Average per demo</p>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+            <CardTitle className="text-sm font-medium">Views</CardTitle>
+            <BarChart3 className="h-4 w-4 text-muted-foreground" />
+          </CardHeader>
+          <CardContent>
+            <div className="text-2xl font-bold">{stats.views}</div>
+            <p className="text-xs text-muted-foreground">Across all demos</p>
+          </CardContent>
+        </Card>
       </div>
 
       <div>
@@ -212,54 +206,54 @@ export default function DashboardPage() {
                           <Play className="h-6 w-6 fill-current" />
                         </Button>
                       </div>
-                          <div className="absolute top-2 right-2 flex gap-1">
-                            {["executing", "recording"].includes(demo.status?.toLowerCase()) && (
-                              <Badge variant="default" className="bg-red-500 text-white border-none animate-pulse flex items-center gap-1">
-                                <div className="h-1.5 w-1.5 rounded-full bg-white" />
-                                LIVE
-                              </Badge>
-                            )}
-                            <Badge variant={demo.status === "Completed" ? "default" : "secondary"} className="backdrop-blur-md bg-background/80 text-foreground border-none capitalize">
-                              {demo.status}
-                            </Badge>
-                          </div>
+                      <div className="absolute top-2 right-2 flex gap-1">
+                        {["executing", "recording"].includes(demo.status?.toLowerCase()) && (
+                          <Badge variant="default" className="bg-red-500 text-white border-none animate-pulse flex items-center gap-1">
+                            <div className="h-1.5 w-1.5 rounded-full bg-white" />
+                            LIVE
+                          </Badge>
+                        )}
+                        <Badge variant={demo.status === "Completed" ? "default" : "secondary"} className="backdrop-blur-md bg-background/80 text-foreground border-none capitalize">
+                          {demo.status}
+                        </Badge>
+                      </div>
+                    </div>
+                    <CardHeader className="p-4 space-y-0">
+                      <div className="flex items-start justify-between gap-2">
+                        <div className="space-y-1">
+                          <CardTitle className="text-base line-clamp-1">{demo.title}</CardTitle>
+                          <CardDescription className="flex items-center gap-1.5 text-xs">
+                            <ExternalLink className="h-3 w-3" />
+                            {demo.repo_url?.split('/').pop()}
+                          </CardDescription>
                         </div>
-                        <CardHeader className="p-4 space-y-0">
-                          <div className="flex items-start justify-between gap-2">
-                            <div className="space-y-1">
-                              <CardTitle className="text-base line-clamp-1">{demo.title}</CardTitle>
-                              <CardDescription className="flex items-center gap-1.5 text-xs">
-                                <ExternalLink className="h-3 w-3" />
-                                {demo.repo_url?.split('/').pop()}
-                              </CardDescription>
-                            </div>
-                            <div className="flex items-center gap-1">
-                              {["executing", "recording"].includes(demo.status?.toLowerCase()) && (
-                                <Link href={`/dashboard/generate?repo=${encodeURIComponent(demo.repo_url)}&prompt=${encodeURIComponent(demo.description || "")}&demo_id=${demo.id}`}>
-                                  <Button size="icon" variant="ghost" className="h-8 w-8 text-primary">
-                                    <Eye className="h-4 w-4" />
-                                  </Button>
+                        <div className="flex items-center gap-1">
+                          {["executing", "recording"].includes(demo.status?.toLowerCase()) && (
+                            <Link href={`/dashboard/generate?repo=${encodeURIComponent(demo.repo_url)}&prompt=${encodeURIComponent(demo.description || "")}&demo_id=${demo.id}`}>
+                              <Button size="icon" variant="ghost" className="h-8 w-8 text-primary" onClick={(e) => e.stopPropagation()}>
+                                <Eye className="h-4 w-4" />
+                              </Button>
+                            </Link>
+                          )}
+                          <DropdownMenu>
+                            <DropdownMenuTrigger asChild>
+                              <Button variant="ghost" size="icon" className="h-8 w-8" onClick={(e) => e.preventDefault()}>
+                                <MoreVertical className="h-4 w-4" />
+                              </Button>
+                            </DropdownMenuTrigger>
+                            <DropdownMenuContent align="end">
+                              <DropdownMenuItem>Edit Settings</DropdownMenuItem>
+                              <DropdownMenuItem asChild>
+                                <Link href={`/share/${demo.id}`}>
+                                  Share Demo
                                 </Link>
-                              )}
-                              <DropdownMenu>
-                                <DropdownMenuTrigger asChild>
-                                  <Button variant="ghost" size="icon" className="h-8 w-8" onClick={(e) => e.preventDefault()}>
-                                    <MoreVertical className="h-4 w-4" />
-                                  </Button>
-                                </DropdownMenuTrigger>
-                                <DropdownMenuContent align="end">
-                                  <DropdownMenuItem>Edit Settings</DropdownMenuItem>
-                                  <DropdownMenuItem asChild>
-                                    <Link href={`/share/${demo.id}`}>
-                                      Share Demo
-                                    </Link>
-                                  </DropdownMenuItem>
-                                  <DropdownMenuItem className="text-destructive">Delete</DropdownMenuItem>
-                                </DropdownMenuContent>
-                              </DropdownMenu>
-                            </div>
-                          </div>
-                        </CardHeader>
+                              </DropdownMenuItem>
+                              <DropdownMenuItem className="text-destructive">Delete</DropdownMenuItem>
+                            </DropdownMenuContent>
+                          </DropdownMenu>
+                        </div>
+                      </div>
+                    </CardHeader>
 
                     <CardContent className="px-4 pb-4 pt-0">
                       <p className="text-xs text-muted-foreground">
@@ -275,4 +269,3 @@ export default function DashboardPage() {
     </div>
   )
 }
-
