@@ -170,39 +170,55 @@ export default function DashboardPage() {
                           <Play className="h-6 w-6 fill-current" />
                         </Button>
                       </div>
-                      <div className="absolute top-2 right-2">
-                        <Badge variant={demo.status === "Completed" ? "default" : "secondary"} className="backdrop-blur-md bg-background/80 text-foreground border-none">
-                          {demo.status}
-                        </Badge>
-                      </div>
-                    </div>
-                    <CardHeader className="p-4 space-y-0">
-                      <div className="flex items-start justify-between gap-2">
-                        <div className="space-y-1">
-                          <CardTitle className="text-base line-clamp-1">{demo.title}</CardTitle>
-                          <CardDescription className="flex items-center gap-1.5 text-xs">
-                            <ExternalLink className="h-3 w-3" />
-                            {demo.repo_url?.split('/').pop()}
-                          </CardDescription>
+                          <div className="absolute top-2 right-2 flex gap-1">
+                            {["executing", "recording"].includes(demo.status?.toLowerCase()) && (
+                              <Badge variant="default" className="bg-red-500 text-white border-none animate-pulse flex items-center gap-1">
+                                <div className="h-1.5 w-1.5 rounded-full bg-white" />
+                                LIVE
+                              </Badge>
+                            )}
+                            <Badge variant={demo.status === "Completed" ? "default" : "secondary"} className="backdrop-blur-md bg-background/80 text-foreground border-none capitalize">
+                              {demo.status}
+                            </Badge>
+                          </div>
                         </div>
-                        <DropdownMenu>
-                          <DropdownMenuTrigger asChild>
-                            <Button variant="ghost" size="icon" className="h-8 w-8" onClick={(e) => e.preventDefault()}>
-                              <MoreVertical className="h-4 w-4" />
-                            </Button>
-                          </DropdownMenuTrigger>
-                          <DropdownMenuContent align="end">
-                            <DropdownMenuItem>Edit Settings</DropdownMenuItem>
-                            <DropdownMenuItem asChild>
-                              <Link href={`/share/${demo.id}`}>
-                                Share Demo
-                              </Link>
-                            </DropdownMenuItem>
-                            <DropdownMenuItem className="text-destructive">Delete</DropdownMenuItem>
-                          </DropdownMenuContent>
-                        </DropdownMenu>
-                      </div>
-                    </CardHeader>
+                        <CardHeader className="p-4 space-y-0">
+                          <div className="flex items-start justify-between gap-2">
+                            <div className="space-y-1">
+                              <CardTitle className="text-base line-clamp-1">{demo.title}</CardTitle>
+                              <CardDescription className="flex items-center gap-1.5 text-xs">
+                                <ExternalLink className="h-3 w-3" />
+                                {demo.repo_url?.split('/').pop()}
+                              </CardDescription>
+                            </div>
+                            <div className="flex items-center gap-1">
+                              {["executing", "recording"].includes(demo.status?.toLowerCase()) && (
+                                <Link href={`/dashboard/generate?repo=${encodeURIComponent(demo.repo_url)}&prompt=${encodeURIComponent(demo.description || "")}&demo_id=${demo.id}`}>
+                                  <Button size="icon" variant="ghost" className="h-8 w-8 text-primary">
+                                    <Eye className="h-4 w-4" />
+                                  </Button>
+                                </Link>
+                              )}
+                              <DropdownMenu>
+                                <DropdownMenuTrigger asChild>
+                                  <Button variant="ghost" size="icon" className="h-8 w-8" onClick={(e) => e.preventDefault()}>
+                                    <MoreVertical className="h-4 w-4" />
+                                  </Button>
+                                </DropdownMenuTrigger>
+                                <DropdownMenuContent align="end">
+                                  <DropdownMenuItem>Edit Settings</DropdownMenuItem>
+                                  <DropdownMenuItem asChild>
+                                    <Link href={`/share/${demo.id}`}>
+                                      Share Demo
+                                    </Link>
+                                  </DropdownMenuItem>
+                                  <DropdownMenuItem className="text-destructive">Delete</DropdownMenuItem>
+                                </DropdownMenuContent>
+                              </DropdownMenu>
+                            </div>
+                          </div>
+                        </CardHeader>
+
                     <CardContent className="px-4 pb-4 pt-0">
                       <p className="text-xs text-muted-foreground">
                         {new Date(demo.created_at).toLocaleDateString()}
