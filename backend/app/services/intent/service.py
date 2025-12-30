@@ -1,262 +1,369 @@
 import json
+import logging
 from typing import Optional, Dict, Any, List
+from datetime import datetime
+
 from openai import AsyncOpenAI
 from anthropic import AsyncAnthropic
-from ...models.schemas import ExecutionPlan, Feature, ExecutionStep
-from ...core.config import settings
-from ...core.database import get_supabase
+from supabase import create_client, Client
 
-INTENT_SYSTEM_PROMPT = """You are an AI video planning assistant for AutoVidAI. Your job is to analyze user prompts and generate deterministic execution plans for browser automation.
+from app.core.config import settings
+from app.models.intent import (
+    IntentType,
+    StepType,
+    ExecutionStep,
+    FeatureMilestone,
+    ExecutionPlan,
+    IntentAnalysis,
+    PlanGenerationRequest,
+    PlanGenerationResponse,
+)
+from app.services.browser import MCP_BROWSER_TOOLS
 
-Given a user's prompt about what they want to demonstrate in their app, create a structured execution plan.
+logger = logging.getLogger(__name__)
 
-Output a JSON object with this structure:
-{
-  "video_type": "feature_walkthrough" | "onboarding_guide" | "release_highlight",
-  "features": [
-    {
-      "name": "Feature Name",
-      "description": "What this feature demonstrates",
-      "priority": 1,
-      "steps": [
-        {
-          "action": "navigate" | "click" | "type" | "wait" | "scroll" | "hover" | "screenshot",
-          "target": "CSS selector or description",
-          "value": "value to type or URL to navigate",
-          "reasoning": "Why this step is needed",
-          "success_condition": "What indicates success",
-          "timeout_ms": 5000
-        }
-      ]
-    }
+
+INTENT_ANALYSIS_PROMPT = """You are an AI that analyzes user requests to understand their intent for creating product demo videos.
+
+Given the user's request and application context, analyze their intent and provide structured output.
+
+User Request: {user_prompt}
+
+Application Context:
+- URL: {app_url}
+- Additional Context: {app_context}
+
+Analyze the intent and respond with a JSON object containing:
+{{
+  "intent_type": "explore" | "demonstrate_feature" | "walkthrough" | "compare" | "onboarding" | "custom",
+  "confidence": 0.0-1.0,
+  "features_to_showcase": ["list of features to demonstrate"],
+  "suggested_routes": ["list of URL routes or pages to visit"],
+  "key_interactions": ["list of key user interactions to perform"],
+  "target_audience": "description of target audience",
+  "tone": "professional" | "casual" | "technical" | "friendly",
+  "estimated_steps": number
+}}
+
+Respond ONLY with the JSON object, no additional text."""
+
+
+PLAN_GENERATION_PROMPT = """You are an AI that generates detailed execution plans for browser automation to create product demo videos.
+
+Given the intent analysis and application context, create a step-by-step execution plan.
+
+Intent Analysis:
+{intent_analysis}
+
+User Request: {user_prompt}
+
+Application:
+- URL: {app_url}
+- Context: {app_context}
+
+Available browser actions:
+{browser_tools}
+
+Generate a detailed execution plan as a JSON object:
+{{
+  "title": "Demo title",
+  "description": "Brief description of the demo",
+  "steps": [
+    {{
+      "order": 1,
+      "step_type": "navigate" | "click" | "type" | "scroll" | "wait" | "screenshot" | "hover" | "assert" | "narrate",
+      "description": "Human-readable description of this step",
+      "target": "CSS selector or URL (if applicable)",
+      "value": "Text to type or value (if applicable)",
+      "wait_after_ms": 500,
+      "screenshot_before": false,
+      "screenshot_after": true,
+      "narration": "Voiceover text for this step (if include_narration is true)",
+      "expected_outcome": "What should happen after this step"
+    }}
   ],
-  "start_url": "/",
+  "milestones": [
+    {{
+      "name": "Feature milestone name",
+      "description": "What this milestone demonstrates",
+      "start_step": 1,
+      "end_step": 5,
+      "importance": "high" | "medium" | "low"
+    }}
+  ],
   "estimated_duration_seconds": 60
-}
+}}
 
-Rules:
-1. Be specific with CSS selectors when possible
-2. Include wait steps for page loads and animations
-3. Order features by priority (1 = highest)
-4. Keep steps atomic and verifiable
-5. Include screenshot steps at key moments
-6. Estimate realistic durations
-"""
+Guidelines:
+1. Start with navigating to the app URL
+2. Include natural pauses and scroll actions for realistic demos
+3. Group related steps into milestones
+4. Include narration text that explains what's happening
+5. Use specific CSS selectors when targeting elements
+6. Maximum {max_steps} steps allowed
+7. Make the demo engaging and highlight key features
 
-class IntentService:
+Respond ONLY with the JSON object, no additional text."""
+
+
+class IntentPlanningService:
     def __init__(self):
-        self.openai_client = AsyncOpenAI(api_key=settings.OPENAI_API_KEY) if settings.OPENAI_API_KEY else None
-        self.anthropic_client = AsyncAnthropic(api_key=settings.ANTHROPIC_API_KEY) if settings.ANTHROPIC_API_KEY else None
-        self.supabase = get_supabase()
-    
-    async def generate_execution_plan(
+        self._openai: Optional[AsyncOpenAI] = None
+        self._anthropic: Optional[AsyncAnthropic] = None
+        self._supabase: Optional[Client] = None
+
+    @property
+    def openai(self) -> AsyncOpenAI:
+        if self._openai is None:
+            self._openai = AsyncOpenAI(api_key=settings.OPENAI_API_KEY)
+        return self._openai
+
+    @property
+    def anthropic(self) -> AsyncAnthropic:
+        if self._anthropic is None:
+            self._anthropic = AsyncAnthropic(api_key=settings.ANTHROPIC_API_KEY)
+        return self._anthropic
+
+    @property
+    def supabase(self) -> Client:
+        if self._supabase is None:
+            self._supabase = create_client(
+                settings.SUPABASE_URL,
+                settings.SUPABASE_SERVICE_ROLE_KEY,
+            )
+        return self._supabase
+
+    async def analyze_intent(
         self,
-        demo_id: str,
-        prompt: str,
-        app_context: Optional[Dict[str, Any]] = None
-    ) -> ExecutionPlan:
-        user_message = self._build_user_message(prompt, app_context)
-        
-        if self.openai_client:
-            plan_data = await self._call_openai(user_message)
-        elif self.anthropic_client:
-            plan_data = await self._call_anthropic(user_message)
-        else:
-            plan_data = self._generate_fallback_plan(prompt)
-        
-        plan = self._parse_plan(demo_id, plan_data)
-        
-        await self._store_plan(demo_id, plan)
-        
-        return plan
-    
-    async def get_plan(self, demo_id: str) -> Optional[ExecutionPlan]:
-        result = self.supabase.table("execution_plans")\
-            .select("*")\
-            .eq("demo_id", demo_id)\
-            .single()\
-            .execute()
-        
-        if not result.data:
-            return None
-        
-        return self._row_to_plan(result.data)
-    
-    def _build_user_message(self, prompt: str, app_context: Optional[Dict[str, Any]]) -> str:
-        message = f"User wants to demonstrate: {prompt}\n\n"
-        
-        if app_context:
-            if app_context.get("framework"):
-                message += f"Framework: {app_context['framework']}\n"
-            if app_context.get("routes"):
-                message += f"Available routes: {', '.join(app_context['routes'])}\n"
-            if app_context.get("components"):
-                message += f"Key components: {', '.join(app_context['components'])}\n"
-        
-        message += "\nGenerate an execution plan for this demo."
-        return message
-    
-    async def _call_openai(self, user_message: str) -> Dict[str, Any]:
-        response = await self.openai_client.chat.completions.create(
-            model="gpt-4o",
-            messages=[
-                {"role": "system", "content": INTENT_SYSTEM_PROMPT},
-                {"role": "user", "content": user_message}
-            ],
-            response_format={"type": "json_object"},
-            temperature=0.3
-        )
-        
-        return json.loads(response.choices[0].message.content)
-    
-    async def _call_anthropic(self, user_message: str) -> Dict[str, Any]:
-        response = await self.anthropic_client.messages.create(
-            model="claude-3-5-sonnet-20241022",
-            max_tokens=4096,
-            system=INTENT_SYSTEM_PROMPT,
-            messages=[
-                {"role": "user", "content": user_message}
-            ]
-        )
-        
-        content = response.content[0].text
-        json_start = content.find("{")
-        json_end = content.rfind("}") + 1
-        return json.loads(content[json_start:json_end])
-    
-    def _generate_fallback_plan(self, prompt: str) -> Dict[str, Any]:
-        return {
-            "video_type": "feature_walkthrough",
-            "features": [
-                {
-                    "name": "Main Flow",
-                    "description": f"Walkthrough based on: {prompt}",
-                    "priority": 1,
-                    "steps": [
-                        {
-                            "action": "navigate",
-                            "target": None,
-                            "value": "/",
-                            "reasoning": "Start at homepage",
-                            "success_condition": "Page loaded",
-                            "timeout_ms": 5000
-                        },
-                        {
-                            "action": "wait",
-                            "target": None,
-                            "value": "2000",
-                            "reasoning": "Allow page to fully render",
-                            "success_condition": "Page stable",
-                            "timeout_ms": 3000
-                        },
-                        {
-                            "action": "screenshot",
-                            "target": None,
-                            "value": "initial_view",
-                            "reasoning": "Capture initial state",
-                            "success_condition": "Screenshot taken",
-                            "timeout_ms": 1000
-                        }
-                    ]
-                }
-            ],
-            "start_url": "/",
-            "estimated_duration_seconds": 30
-        }
-    
-    def _parse_plan(self, demo_id: str, plan_data: Dict[str, Any]) -> ExecutionPlan:
-        features = []
-        for f_data in plan_data.get("features", []):
-            steps = []
-            for s_data in f_data.get("steps", []):
-                step = ExecutionStep(
-                    action=s_data.get("action", "wait"),
-                    target=s_data.get("target"),
-                    value=s_data.get("value"),
-                    reasoning=s_data.get("reasoning"),
-                    success_condition=s_data.get("success_condition"),
-                    timeout_ms=s_data.get("timeout_ms", 5000)
-                )
-                steps.append(step)
-            
-            feature = Feature(
-                name=f_data.get("name", "Unnamed Feature"),
-                description=f_data.get("description", ""),
-                steps=steps,
-                priority=f_data.get("priority", 0)
-            )
-            features.append(feature)
-        
-        return ExecutionPlan(
-            demo_id=demo_id,
-            video_type=plan_data.get("video_type", "feature_walkthrough"),
-            features=features,
-            start_url=plan_data.get("start_url", "/"),
-            estimated_duration_seconds=plan_data.get("estimated_duration_seconds", 60),
-            metadata={"raw_plan": plan_data}
-        )
-    
-    async def _store_plan(self, demo_id: str, plan: ExecutionPlan):
-        plan_dict = {
-            "id": plan.id,
-            "demo_id": demo_id,
-            "video_type": plan.video_type,
-            "features": [
-                {
-                    "id": f.id,
-                    "name": f.name,
-                    "description": f.description,
-                    "priority": f.priority,
-                    "steps": [
-                        {
-                            "id": s.id,
-                            "action": s.action,
-                            "target": s.target,
-                            "value": s.value,
-                            "reasoning": s.reasoning,
-                            "success_condition": s.success_condition,
-                            "timeout_ms": s.timeout_ms
-                        }
-                        for s in f.steps
-                    ]
-                }
-                for f in plan.features
-            ],
-            "start_url": plan.start_url,
-            "estimated_duration_seconds": plan.estimated_duration_seconds,
-            "metadata": plan.metadata
-        }
-        
-        self.supabase.table("execution_plans").upsert(plan_dict).execute()
-        
-        self.supabase.table("demos")\
-            .update({"execution_plan": plan_dict})\
-            .eq("id", demo_id)\
-            .execute()
-    
-    def _row_to_plan(self, row: Dict[str, Any]) -> ExecutionPlan:
-        features = []
-        for f_data in row.get("features", []):
-            steps = [
-                ExecutionStep(**s_data) for s_data in f_data.get("steps", [])
-            ]
-            feature = Feature(
-                id=f_data.get("id"),
-                name=f_data.get("name"),
-                description=f_data.get("description"),
-                steps=steps,
-                priority=f_data.get("priority", 0)
-            )
-            features.append(feature)
-        
-        return ExecutionPlan(
-            id=row.get("id"),
-            demo_id=row.get("demo_id"),
-            video_type=row.get("video_type"),
-            features=features,
-            start_url=row.get("start_url"),
-            estimated_duration_seconds=row.get("estimated_duration_seconds"),
-            metadata=row.get("metadata", {})
+        user_prompt: str,
+        app_url: str,
+        app_context: Optional[Dict[str, Any]] = None,
+    ) -> IntentAnalysis:
+        prompt = INTENT_ANALYSIS_PROMPT.format(
+            user_prompt=user_prompt,
+            app_url=app_url,
+            app_context=json.dumps(app_context or {}),
         )
 
-intent_service = IntentService()
+        try:
+            if settings.ANTHROPIC_API_KEY:
+                response = await self.anthropic.messages.create(
+                    model="claude-3-5-sonnet-20241022",
+                    max_tokens=1024,
+                    messages=[{"role": "user", "content": prompt}],
+                )
+                result_text = response.content[0].text
+            elif settings.OPENAI_API_KEY:
+                response = await self.openai.chat.completions.create(
+                    model="gpt-4o",
+                    messages=[{"role": "user", "content": prompt}],
+                    max_tokens=1024,
+                )
+                result_text = response.choices[0].message.content
+            else:
+                return self._default_intent_analysis(user_prompt)
+
+            result = json.loads(result_text)
+            return IntentAnalysis(
+                intent_type=IntentType(result.get("intent_type", "walkthrough")),
+                confidence=result.get("confidence", 0.8),
+                features_to_showcase=result.get("features_to_showcase", []),
+                suggested_routes=result.get("suggested_routes", []),
+                key_interactions=result.get("key_interactions", []),
+                target_audience=result.get("target_audience", "general"),
+                tone=result.get("tone", "professional"),
+                estimated_steps=result.get("estimated_steps", 10),
+            )
+
+        except Exception as e:
+            logger.error(f"Intent analysis failed: {e}")
+            return self._default_intent_analysis(user_prompt)
+
+    def _default_intent_analysis(self, user_prompt: str) -> IntentAnalysis:
+        return IntentAnalysis(
+            intent_type=IntentType.WALKTHROUGH,
+            confidence=0.5,
+            features_to_showcase=["main features"],
+            suggested_routes=["/"],
+            key_interactions=["click", "navigate"],
+            target_audience="general",
+            tone="professional",
+            estimated_steps=10,
+        )
+
+    async def generate_plan(self, request: PlanGenerationRequest) -> PlanGenerationResponse:
+        try:
+            intent_analysis = await self.analyze_intent(
+                user_prompt=request.user_prompt,
+                app_url=request.app_url,
+                app_context=request.app_context,
+            )
+
+            browser_tools_str = "\n".join([
+                f"- {tool.name}: {tool.description}"
+                for tool in MCP_BROWSER_TOOLS
+            ])
+
+            prompt = PLAN_GENERATION_PROMPT.format(
+                intent_analysis=intent_analysis.model_dump_json(),
+                user_prompt=request.user_prompt,
+                app_url=request.app_url,
+                app_context=json.dumps(request.app_context or {}),
+                browser_tools=browser_tools_str,
+                max_steps=request.max_steps,
+            )
+
+            if settings.ANTHROPIC_API_KEY:
+                response = await self.anthropic.messages.create(
+                    model="claude-3-5-sonnet-20241022",
+                    max_tokens=4096,
+                    messages=[{"role": "user", "content": prompt}],
+                )
+                result_text = response.content[0].text
+            elif settings.OPENAI_API_KEY:
+                response = await self.openai.chat.completions.create(
+                    model="gpt-4o",
+                    messages=[{"role": "user", "content": prompt}],
+                    max_tokens=4096,
+                )
+                result_text = response.choices[0].message.content
+            else:
+                return PlanGenerationResponse(
+                    success=False,
+                    error="No LLM API key configured",
+                )
+
+            result = json.loads(result_text)
+
+            steps = []
+            for step_data in result.get("steps", []):
+                steps.append(ExecutionStep(
+                    order=step_data.get("order", len(steps) + 1),
+                    step_type=StepType(step_data.get("step_type", "click")),
+                    description=step_data.get("description", ""),
+                    target=step_data.get("target"),
+                    value=step_data.get("value"),
+                    wait_after_ms=step_data.get("wait_after_ms", 500),
+                    screenshot_before=step_data.get("screenshot_before", False),
+                    screenshot_after=step_data.get("screenshot_after", True),
+                    narration=step_data.get("narration") if request.include_narration else None,
+                    expected_outcome=step_data.get("expected_outcome"),
+                ))
+
+            milestones = []
+            for ms_data in result.get("milestones", []):
+                milestone_steps = [s for s in steps if ms_data.get("start_step", 0) <= s.order <= ms_data.get("end_step", 0)]
+                milestones.append(FeatureMilestone(
+                    name=ms_data.get("name", ""),
+                    description=ms_data.get("description", ""),
+                    steps=milestone_steps,
+                    start_step=ms_data.get("start_step", 1),
+                    end_step=ms_data.get("end_step", len(steps)),
+                    importance=ms_data.get("importance", "medium"),
+                ))
+
+            plan = ExecutionPlan(
+                project_id=request.project_id,
+                intent_type=intent_analysis.intent_type,
+                user_prompt=request.user_prompt,
+                title=result.get("title", "Product Demo"),
+                description=result.get("description", ""),
+                steps=steps,
+                milestones=milestones,
+                estimated_duration_seconds=result.get("estimated_duration_seconds", 60),
+                metadata={
+                    "app_url": request.app_url,
+                    "demo_style": request.demo_style,
+                },
+            )
+
+            await self._store_plan(plan)
+
+            return PlanGenerationResponse(
+                success=True,
+                plan=plan,
+                intent_analysis=intent_analysis,
+            )
+
+        except Exception as e:
+            logger.exception(f"Plan generation failed: {e}")
+            return PlanGenerationResponse(
+                success=False,
+                error=str(e),
+            )
+
+    async def _store_plan(self, plan: ExecutionPlan):
+        try:
+            plan_data = {
+                "id": plan.id,
+                "project_id": plan.project_id,
+                "demo_id": plan.demo_id,
+                "intent_type": plan.intent_type.value,
+                "user_prompt": plan.user_prompt,
+                "title": plan.title,
+                "description": plan.description,
+                "steps": json.dumps([s.model_dump() for s in plan.steps]),
+                "milestones": json.dumps([m.model_dump() for m in plan.milestones]),
+                "estimated_duration_seconds": plan.estimated_duration_seconds,
+                "metadata": json.dumps(plan.metadata),
+            }
+            self.supabase.table("execution_plans").insert(plan_data).execute()
+            logger.info(f"Stored execution plan: {plan.id}")
+        except Exception as e:
+            logger.error(f"Failed to store plan: {e}")
+
+    async def get_plan(self, plan_id: str) -> Optional[ExecutionPlan]:
+        try:
+            result = self.supabase.table("execution_plans").select("*").eq("id", plan_id).execute()
+            if not result.data:
+                return None
+
+            row = result.data[0]
+            steps = [ExecutionStep(**s) for s in json.loads(row["steps"])]
+            milestones = [FeatureMilestone(**m) for m in json.loads(row["milestones"])]
+
+            return ExecutionPlan(
+                id=row["id"],
+                project_id=row["project_id"],
+                demo_id=row.get("demo_id"),
+                intent_type=IntentType(row["intent_type"]),
+                user_prompt=row["user_prompt"],
+                title=row["title"],
+                description=row["description"],
+                steps=steps,
+                milestones=milestones,
+                estimated_duration_seconds=row["estimated_duration_seconds"],
+                metadata=json.loads(row["metadata"]) if row.get("metadata") else {},
+                created_at=datetime.fromisoformat(row["created_at"].replace("Z", "+00:00")) if row.get("created_at") else datetime.utcnow(),
+            )
+        except Exception as e:
+            logger.error(f"Failed to get plan {plan_id}: {e}")
+            return None
+
+    async def list_plans(self, project_id: str) -> List[ExecutionPlan]:
+        try:
+            result = self.supabase.table("execution_plans").select("*").eq("project_id", project_id).order("created_at", desc=True).execute()
+            plans = []
+            for row in result.data:
+                steps = [ExecutionStep(**s) for s in json.loads(row["steps"])]
+                milestones = [FeatureMilestone(**m) for m in json.loads(row["milestones"])]
+                plans.append(ExecutionPlan(
+                    id=row["id"],
+                    project_id=row["project_id"],
+                    demo_id=row.get("demo_id"),
+                    intent_type=IntentType(row["intent_type"]),
+                    user_prompt=row["user_prompt"],
+                    title=row["title"],
+                    description=row["description"],
+                    steps=steps,
+                    milestones=milestones,
+                    estimated_duration_seconds=row["estimated_duration_seconds"],
+                    metadata=json.loads(row["metadata"]) if row.get("metadata") else {},
+                ))
+            return plans
+        except Exception as e:
+            logger.error(f"Failed to list plans: {e}")
+            return []
+
+
+intent_service = IntentPlanningService()
