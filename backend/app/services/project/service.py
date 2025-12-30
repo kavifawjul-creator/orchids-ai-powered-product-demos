@@ -1,195 +1,313 @@
+import logging
 import re
-import httpx
-from typing import Optional, Dict, Any, Tuple
+import json
+from typing import Optional, Dict, Any, List
 from datetime import datetime
-from ...models.schemas import Project, ProjectStatus, BuildSystem
-from ...core.database import get_supabase
-from ...core.events import event_bus, EventTypes
-from ...core.config import settings
+from urllib.parse import urlparse
+
+import httpx
+from supabase import create_client, Client
+
+from app.core.config import settings
+from app.models.project import (
+    ProjectInfo,
+    ProjectStatus,
+    ProjectCreateRequest,
+    ProjectUpdateRequest,
+    ProjectResponse,
+    GitRepoInfo,
+    ProjectAnalysis,
+)
+from app.services.sandbox import sandbox_service, SandboxCreateRequest, SandboxConfig
+
+logger = logging.getLogger(__name__)
+
 
 class ProjectService:
     def __init__(self):
-        self.supabase = get_supabase()
-    
-    async def create_project(self, repo_url: str, title: Optional[str] = None) -> Project:
-        validated_url, repo_info = await self._validate_repo(repo_url)
-        
-        project_title = title or repo_info.get("name", repo_url.split("/")[-1])
-        
-        project = Project(
-            repo_url=validated_url,
-            title=project_title,
-            description=repo_info.get("description"),
-            status=ProjectStatus.PENDING,
-            metadata={
-                "repo_info": repo_info,
-                "created_from": "api"
-            }
+        self._supabase: Optional[Client] = None
+
+    @property
+    def supabase(self) -> Client:
+        if self._supabase is None:
+            self._supabase = create_client(
+                settings.SUPABASE_URL,
+                settings.SUPABASE_SERVICE_ROLE_KEY,
+            )
+        return self._supabase
+
+    def _parse_github_url(self, url: str) -> GitRepoInfo:
+        url = url.strip()
+        if url.endswith(".git"):
+            url = url[:-4]
+
+        patterns = [
+            r"github\.com[:/](?P<owner>[^/]+)/(?P<name>[^/]+)",
+            r"gitlab\.com[:/](?P<owner>[^/]+)/(?P<name>[^/]+)",
+            r"bitbucket\.org[:/](?P<owner>[^/]+)/(?P<name>[^/]+)",
+        ]
+
+        for pattern in patterns:
+            match = re.search(pattern, url)
+            if match:
+                owner = match.group("owner")
+                name = match.group("name")
+                return GitRepoInfo(
+                    url=url,
+                    owner=owner,
+                    name=name,
+                    clone_url=f"https://github.com/{owner}/{name}.git",
+                )
+
+        parsed = urlparse(url)
+        path_parts = parsed.path.strip("/").split("/")
+        if len(path_parts) >= 2:
+            return GitRepoInfo(
+                url=url,
+                owner=path_parts[0],
+                name=path_parts[1],
+                clone_url=url if url.endswith(".git") else f"{url}.git",
+            )
+
+        return GitRepoInfo(
+            url=url,
+            owner="unknown",
+            name="unknown",
+            clone_url=url,
         )
+
+    async def fetch_repo_info(self, url: str, token: Optional[str] = None) -> GitRepoInfo:
+        repo_info = self._parse_github_url(url)
         
-        result = self.supabase.table("projects").insert({
-            "id": project.id,
-            "repo_url": project.repo_url,
-            "title": project.title,
-            "description": project.description,
-            "status": project.status.value,
-            "metadata": project.metadata,
-            "created_at": project.created_at.isoformat(),
-            "updated_at": project.updated_at.isoformat()
-        }).execute()
-        
-        await event_bus.publish(
-            f"project:{project.id}",
-            EventTypes.PROJECT_CREATED,
-            {"project_id": project.id}
-        )
-        
-        return project
-    
-    async def get_project(self, project_id: str) -> Optional[Project]:
-        result = self.supabase.table("projects").select("*").eq("id", project_id).single().execute()
-        
-        if not result.data:
-            return None
-            
-        return self._row_to_project(result.data)
-    
-    async def list_projects(self, limit: int = 50, offset: int = 0) -> list[Project]:
-        result = self.supabase.table("projects")\
-            .select("*")\
-            .order("created_at", desc=True)\
-            .range(offset, offset + limit - 1)\
-            .execute()
-        
-        return [self._row_to_project(row) for row in result.data]
-    
-    async def update_project(self, project_id: str, updates: Dict[str, Any]) -> Optional[Project]:
-        updates["updated_at"] = datetime.utcnow().isoformat()
-        
-        if "status" in updates and isinstance(updates["status"], ProjectStatus):
-            updates["status"] = updates["status"].value
-        if "build_system" in updates and isinstance(updates["build_system"], BuildSystem):
-            updates["build_system"] = updates["build_system"].value
-            
-        result = self.supabase.table("projects")\
-            .update(updates)\
-            .eq("id", project_id)\
-            .execute()
-        
-        if result.data:
-            return self._row_to_project(result.data[0])
-        return None
-    
-    async def delete_project(self, project_id: str) -> bool:
-        result = self.supabase.table("projects").delete().eq("id", project_id).execute()
-        return bool(result.data)
-    
-    async def detect_build_system(self, files: list[str]) -> Tuple[BuildSystem, Dict[str, Any]]:
-        build_config = {}
-        
-        file_set = set(files)
-        
-        if "package.json" in file_set:
-            build_config["install_command"] = "npm install"
-            build_config["dev_command"] = "npm run dev"
-            build_config["port"] = 3000
-            
-            if "next.config.js" in file_set or "next.config.ts" in file_set or "next.config.mjs" in file_set:
-                build_config["framework"] = "nextjs"
-            elif "vite.config.js" in file_set or "vite.config.ts" in file_set:
-                build_config["framework"] = "vite"
-                build_config["port"] = 5173
-            elif "angular.json" in file_set:
-                build_config["framework"] = "angular"
-                build_config["port"] = 4200
-            else:
-                build_config["framework"] = "nodejs"
-                
-            return BuildSystem.NODEJS, build_config
-        
-        if "requirements.txt" in file_set or "pyproject.toml" in file_set:
-            build_config["install_command"] = "pip install -r requirements.txt"
-            build_config["port"] = 8000
-            
-            if "manage.py" in file_set:
-                build_config["framework"] = "django"
-                build_config["dev_command"] = "python manage.py runserver"
-            elif any("fastapi" in f.lower() for f in files) or "main.py" in file_set:
-                build_config["framework"] = "fastapi"
-                build_config["dev_command"] = "uvicorn main:app --reload"
-            elif any("flask" in f.lower() for f in files) or "app.py" in file_set:
-                build_config["framework"] = "flask"
-                build_config["dev_command"] = "flask run"
-            else:
-                build_config["framework"] = "python"
-                build_config["dev_command"] = "python app.py"
-                
-            return BuildSystem.PYTHON, build_config
-        
-        if "Dockerfile" in file_set:
-            build_config["build_command"] = "docker build -t app ."
-            build_config["dev_command"] = "docker run -p 3000:3000 app"
-            build_config["port"] = 3000
-            return BuildSystem.DOCKER, build_config
-        
-        if "index.html" in file_set:
-            build_config["framework"] = "static"
-            build_config["dev_command"] = "npx serve ."
-            build_config["port"] = 3000
-            return BuildSystem.STATIC, build_config
-        
-        return BuildSystem.UNKNOWN, build_config
-    
-    async def _validate_repo(self, repo_url: str) -> Tuple[str, Dict[str, Any]]:
-        github_pattern = r"(?:https?://)?(?:www\.)?github\.com/([^/]+)/([^/]+?)(?:\.git)?/?$"
-        match = re.match(github_pattern, repo_url)
-        
-        if match:
-            owner, repo = match.groups()
-            normalized_url = f"https://github.com/{owner}/{repo}"
-            
+        if "github.com" in url:
+            api_url = f"https://api.github.com/repos/{repo_info.owner}/{repo_info.name}"
+            headers = {"Accept": "application/vnd.github.v3+json"}
+            if token:
+                headers["Authorization"] = f"Bearer {token}"
+
             try:
                 async with httpx.AsyncClient() as client:
-                    response = await client.get(f"https://api.github.com/repos/{owner}/{repo}")
+                    response = await client.get(api_url, headers=headers)
                     if response.status_code == 200:
                         data = response.json()
-                        return normalized_url, {
-                            "name": data.get("name"),
-                            "description": data.get("description"),
-                            "default_branch": data.get("default_branch", "main"),
-                            "private": data.get("private", False),
-                            "language": data.get("language"),
-                            "stars": data.get("stargazers_count"),
-                        }
-            except Exception:
-                pass
+                        repo_info.default_branch = data.get("default_branch", "main")
+                        repo_info.branch = repo_info.default_branch
+                        repo_info.description = data.get("description")
+                        repo_info.language = data.get("language")
+                        repo_info.is_private = data.get("private", False)
+                        repo_info.topics = data.get("topics", [])
+                        repo_info.clone_url = data.get("clone_url", repo_info.clone_url)
+            except Exception as e:
+                logger.warning(f"Failed to fetch GitHub repo info: {e}")
+
+        return repo_info
+
+    async def create_project(self, request: ProjectCreateRequest) -> ProjectResponse:
+        try:
+            repo_info = await self.fetch_repo_info(request.repo_url, request.git_token)
             
-            return normalized_url, {"name": repo}
-        
-        gitlab_pattern = r"(?:https?://)?(?:www\.)?gitlab\.com/([^/]+)/([^/]+?)(?:\.git)?/?$"
-        match = re.match(gitlab_pattern, repo_url)
-        if match:
-            owner, repo = match.groups()
-            return f"https://gitlab.com/{owner}/{repo}", {"name": repo}
-        
-        if repo_url.endswith(".git") or "://" in repo_url:
-            return repo_url, {"name": repo_url.split("/")[-1].replace(".git", "")}
-        
-        raise ValueError(f"Invalid repository URL: {repo_url}")
-    
-    def _row_to_project(self, row: Dict[str, Any]) -> Project:
-        return Project(
-            id=row["id"],
-            repo_url=row["repo_url"],
-            title=row.get("title"),
-            description=row.get("description"),
-            status=ProjectStatus(row["status"]) if row.get("status") else ProjectStatus.PENDING,
-            build_system=BuildSystem(row["build_system"]) if row.get("build_system") else None,
-            preview_url=row.get("preview_url"),
-            sandbox_id=row.get("sandbox_id"),
-            metadata=row.get("metadata", {}),
-            created_at=datetime.fromisoformat(row["created_at"].replace("Z", "+00:00")) if row.get("created_at") else datetime.utcnow(),
-            updated_at=datetime.fromisoformat(row["updated_at"].replace("Z", "+00:00")) if row.get("updated_at") else datetime.utcnow()
-        )
+            title = request.title or repo_info.name
+            description = request.description or repo_info.description
+
+            project_data = {
+                "repo_url": request.repo_url,
+                "title": title,
+                "description": description,
+                "status": ProjectStatus.PENDING.value,
+                "metadata": json.dumps({
+                    "branch": request.branch or repo_info.branch,
+                    "owner": repo_info.owner,
+                    "language": repo_info.language,
+                    "topics": repo_info.topics,
+                }),
+            }
+
+            result = self.supabase.table("projects").insert(project_data).execute()
+            
+            if not result.data:
+                return ProjectResponse(success=False, error="Failed to create project in database")
+
+            project_row = result.data[0]
+            project = ProjectInfo(
+                id=project_row["id"],
+                repo_url=project_row["repo_url"],
+                title=project_row["title"],
+                description=project_row["description"],
+                status=ProjectStatus(project_row["status"]),
+                build_system=project_row.get("build_system"),
+                preview_url=project_row.get("preview_url"),
+                sandbox_id=project_row.get("sandbox_id"),
+                metadata=json.loads(project_row["metadata"]) if project_row.get("metadata") else {},
+                created_at=datetime.fromisoformat(project_row["created_at"].replace("Z", "+00:00")) if project_row.get("created_at") else datetime.utcnow(),
+                updated_at=datetime.fromisoformat(project_row["updated_at"].replace("Z", "+00:00")) if project_row.get("updated_at") else datetime.utcnow(),
+            )
+
+            if request.auto_start_sandbox:
+                await self._start_sandbox_for_project(project, request.branch, request.git_token)
+
+            return ProjectResponse(
+                success=True,
+                project=project,
+                message="Project created successfully",
+            )
+
+        except Exception as e:
+            logger.exception(f"Failed to create project: {e}")
+            return ProjectResponse(success=False, error=str(e))
+
+    async def _start_sandbox_for_project(
+        self,
+        project: ProjectInfo,
+        branch: Optional[str] = None,
+        git_token: Optional[str] = None,
+    ):
+        try:
+            await self.update_project(project.id, ProjectUpdateRequest(
+                status=ProjectStatus.SANDBOX_CREATING
+            ))
+
+            sandbox_request = SandboxCreateRequest(
+                project_id=project.id,
+                git_url=project.repo_url,
+                git_branch=branch or project.metadata.get("branch"),
+                git_token=git_token,
+                config=SandboxConfig(language="python"),
+            )
+
+            response = await sandbox_service.create_sandbox(sandbox_request)
+            
+            if response.success and response.sandbox:
+                await self.update_project(project.id, ProjectUpdateRequest(
+                    status=ProjectStatus.READY,
+                    metadata={
+                        **project.metadata,
+                        "sandbox_id": response.sandbox.id,
+                        "preview_url": response.sandbox.preview_url,
+                        "build_system": response.sandbox.build_system.value if response.sandbox.build_system else None,
+                    }
+                ))
+                
+                self.supabase.table("projects").update({
+                    "sandbox_id": response.sandbox.id,
+                    "preview_url": response.sandbox.preview_url,
+                    "build_system": response.sandbox.build_system.value if response.sandbox.build_system else None,
+                }).eq("id", project.id).execute()
+            else:
+                await self.update_project(project.id, ProjectUpdateRequest(
+                    status=ProjectStatus.ERROR,
+                    metadata={**project.metadata, "error": response.error}
+                ))
+
+        except Exception as e:
+            logger.exception(f"Failed to start sandbox for project {project.id}: {e}")
+            await self.update_project(project.id, ProjectUpdateRequest(
+                status=ProjectStatus.ERROR,
+                metadata={**project.metadata, "error": str(e)}
+            ))
+
+    async def get_project(self, project_id: str) -> Optional[ProjectInfo]:
+        try:
+            result = self.supabase.table("projects").select("*").eq("id", project_id).execute()
+            
+            if not result.data:
+                return None
+
+            row = result.data[0]
+            return ProjectInfo(
+                id=row["id"],
+                repo_url=row["repo_url"],
+                title=row.get("title"),
+                description=row.get("description"),
+                status=ProjectStatus(row["status"]) if row.get("status") else ProjectStatus.PENDING,
+                build_system=row.get("build_system"),
+                preview_url=row.get("preview_url"),
+                sandbox_id=row.get("sandbox_id"),
+                metadata=json.loads(row["metadata"]) if row.get("metadata") else {},
+                created_at=datetime.fromisoformat(row["created_at"].replace("Z", "+00:00")) if row.get("created_at") else datetime.utcnow(),
+                updated_at=datetime.fromisoformat(row["updated_at"].replace("Z", "+00:00")) if row.get("updated_at") else datetime.utcnow(),
+            )
+        except Exception as e:
+            logger.error(f"Failed to get project {project_id}: {e}")
+            return None
+
+    async def update_project(self, project_id: str, request: ProjectUpdateRequest) -> ProjectResponse:
+        try:
+            update_data = {}
+            if request.title is not None:
+                update_data["title"] = request.title
+            if request.description is not None:
+                update_data["description"] = request.description
+            if request.status is not None:
+                update_data["status"] = request.status.value
+            if request.metadata is not None:
+                update_data["metadata"] = json.dumps(request.metadata)
+            
+            update_data["updated_at"] = datetime.utcnow().isoformat()
+
+            result = self.supabase.table("projects").update(update_data).eq("id", project_id).execute()
+            
+            if not result.data:
+                return ProjectResponse(success=False, error="Project not found")
+
+            project = await self.get_project(project_id)
+            return ProjectResponse(success=True, project=project, message="Project updated")
+
+        except Exception as e:
+            logger.error(f"Failed to update project {project_id}: {e}")
+            return ProjectResponse(success=False, error=str(e))
+
+    async def delete_project(self, project_id: str) -> bool:
+        try:
+            project = await self.get_project(project_id)
+            if project and project.sandbox_id:
+                await sandbox_service.terminate_sandbox(project.sandbox_id)
+
+            self.supabase.table("projects").delete().eq("id", project_id).execute()
+            return True
+        except Exception as e:
+            logger.error(f"Failed to delete project {project_id}: {e}")
+            return False
+
+    async def list_projects(
+        self,
+        limit: int = 50,
+        offset: int = 0,
+        status: Optional[ProjectStatus] = None,
+    ) -> List[ProjectInfo]:
+        try:
+            query = self.supabase.table("projects").select("*")
+            
+            if status:
+                query = query.eq("status", status.value)
+            
+            result = query.order("created_at", desc=True).range(offset, offset + limit - 1).execute()
+
+            projects = []
+            for row in result.data:
+                projects.append(ProjectInfo(
+                    id=row["id"],
+                    repo_url=row["repo_url"],
+                    title=row.get("title"),
+                    description=row.get("description"),
+                    status=ProjectStatus(row["status"]) if row.get("status") else ProjectStatus.PENDING,
+                    build_system=row.get("build_system"),
+                    preview_url=row.get("preview_url"),
+                    sandbox_id=row.get("sandbox_id"),
+                    metadata=json.loads(row["metadata"]) if row.get("metadata") else {},
+                    created_at=datetime.fromisoformat(row["created_at"].replace("Z", "+00:00")) if row.get("created_at") else datetime.utcnow(),
+                    updated_at=datetime.fromisoformat(row["updated_at"].replace("Z", "+00:00")) if row.get("updated_at") else datetime.utcnow(),
+                ))
+            return projects
+
+        except Exception as e:
+            logger.error(f"Failed to list projects: {e}")
+            return []
+
+    async def get_project_sandbox(self, project_id: str):
+        project = await self.get_project(project_id)
+        if not project or not project.sandbox_id:
+            return None
+        return await sandbox_service.get_sandbox(project.sandbox_id)
+
 
 project_service = ProjectService()
