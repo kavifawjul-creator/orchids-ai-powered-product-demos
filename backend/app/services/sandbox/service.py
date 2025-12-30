@@ -4,7 +4,12 @@ import json
 from typing import Optional, Dict, Any, List, Callable
 from datetime import datetime
 
-from daytona_sdk import Daytona, DaytonaConfig, CreateSandboxParams
+try:
+    from daytona import Daytona, DaytonaConfig, CreateSandboxParams
+except ImportError:
+    Daytona = None
+    DaytonaConfig = None
+    CreateSandboxParams = None
 
 from app.core.config import settings
 from app.models.sandbox import (
@@ -140,7 +145,10 @@ class DaytonaSandboxService:
         self._event_callbacks: List[Callable] = []
 
     @property
-    def daytona(self) -> Daytona:
+    def daytona(self):
+        if Daytona is None or DaytonaConfig is None:
+            logger.warning("Daytona SDK not available - sandbox features disabled")
+            return None
         if self._daytona is None:
             config = DaytonaConfig(
                 api_key=settings.DAYTONA_API_KEY,
@@ -173,6 +181,15 @@ class DaytonaSandboxService:
         try:
             await self._emit_event("SANDBOX_CREATING", {"sandbox_id": sandbox_info.id})
             sandbox_info.logs.append(f"[{datetime.utcnow().isoformat()}] Creating Daytona sandbox...")
+
+            if self.daytona is None or CreateSandboxParams is None:
+                sandbox_info.status = SandboxStatus.ERROR
+                sandbox_info.error_message = "Daytona SDK not available"
+                return SandboxResponse(
+                    success=False,
+                    sandbox=sandbox_info,
+                    error="Daytona SDK not available - please configure DAYTONA_API_KEY",
+                )
 
             params = CreateSandboxParams(
                 language=request.config.language,
