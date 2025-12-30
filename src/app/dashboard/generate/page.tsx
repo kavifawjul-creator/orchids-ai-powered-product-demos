@@ -50,6 +50,7 @@ export default function GeneratePage() {
   const [currentFrame, setCurrentFrame] = React.useState<string | null>(null)
   const [currentFeature, setCurrentFeature] = React.useState<string>("")
   const [stepProgress, setStepProgress] = React.useState({ current: 0, total: 0 })
+  const [sessionId, setSessionId] = React.useState<string | null>(null)
 
   const addLog = React.useCallback((log: AgentLog) => {
     setLogs(prev => [...prev, log])
