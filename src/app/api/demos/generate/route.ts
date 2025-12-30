@@ -21,45 +21,36 @@ export async function POST(request: NextRequest) {
     const repoName = repo_url.split("/").pop()?.replace(".git", "") || "Demo"
     const demoTitle = title || prompt.slice(0, 50)
 
-    const { data: project, error: projectError } = await supabase
-      .from("projects")
-      .insert({
+    // Call Python backend to start generation
+    const backendUrl = process.env.BACKEND_URL || "http://localhost:8000"
+    const backendResponse = await fetch(`${backendUrl}/api/v1/demos/generate`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
         repo_url,
-        title: repoName,
-        status: "pending",
-        metadata: { prompt }
-      })
-      .select()
-      .single()
+        prompt,
+        title: demoTitle
+      }),
+    })
 
-    if (projectError) {
-      console.error("Project creation error:", projectError)
-    }
-
-    const { data: demo, error: demoError } = await supabase
-      .from("demos")
-      .insert({
-        title: demoTitle,
-        repo_url,
-        description: prompt,
-        status: "pending",
-        project_id: project?.id
-      })
-      .select()
-      .single()
-
-    if (demoError) {
+    if (!backendResponse.ok) {
+      const errorData = await backendResponse.json()
+      console.error("Backend error:", errorData)
       return NextResponse.json(
-        { error: "Failed to create demo" },
-        { status: 500 }
+        { error: errorData.detail || "Failed to trigger generation in backend" },
+        { status: backendResponse.status }
       )
     }
 
+    const backendData = await backendResponse.json()
+
     return NextResponse.json({
-      demo_id: demo.id,
-      project_id: project?.id,
-      status: "pending",
-      message: "Demo generation started"
+      demo_id: backendData.demo_id,
+      project_id: backendData.project_id,
+      status: backendData.status,
+      message: backendData.message
     })
   } catch (error) {
     console.error("Generate error:", error)
