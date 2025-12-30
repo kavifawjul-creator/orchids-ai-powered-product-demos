@@ -370,14 +370,15 @@ class AgentExecutionService:
         self,
         step: ExecutionStep,
         accessibility_tree: Dict[str, Any]
-    ) -> BrowserAction:
+    ) -> Dict[str, Any]:
         if not self.openai_client and not self.anthropic_client:
-            return BrowserAction(
-                action=step.action,
-                selector=step.target,
-                value=step.value,
-                wait_ms=500
-            )
+            return {
+                "tool": "click" if step.action == "click" else "type_text",
+                "arguments": {
+                    "selector": step.target,
+                    "text": step.value
+                }
+            }
         
         prompt = REASONING_PROMPT.format(
             action=step.action,
@@ -407,19 +408,15 @@ class AgentExecutionService:
                 json_end = content.rfind("}") + 1
                 data = json.loads(content[json_start:json_end])
             
-            return BrowserAction(
-                action=data.get("action", step.action),
-                selector=data.get("selector", step.target),
-                value=data.get("value", step.value),
-                wait_ms=500
-            )
+            return data
         except Exception:
-            return BrowserAction(
-                action=step.action,
-                selector=step.target,
-                value=step.value,
-                wait_ms=500
-            )
+            return {
+                "tool": "click" if step.action == "click" else "type_text",
+                "arguments": {
+                    "selector": step.target,
+                    "text": step.value
+                }
+            }
     
     async def _update_demo_status(self, demo_id: str, status: DemoStatus):
         self.supabase.table("demos")\
