@@ -264,16 +264,31 @@ class AgentExecutionService:
     ) -> Dict[str, Any]:
         if self._needs_reasoning(step):
             accessibility_tree = await browser_session.get_accessibility_tree()
-            resolved_action = await self._resolve_action(step, accessibility_tree)
+            resolved = await self._resolve_action(step, accessibility_tree)
+            
+            tool_name = resolved.get("tool")
+            arguments = resolved.get("arguments", {})
+            arguments["session_id"] = session_id
+            
+            try:
+                tool_result = await mcp.call_tool(tool_name, arguments)
+                result = {"success": True, "output": str(tool_result)}
+            except Exception as e:
+                result = {"success": False, "error": str(e)}
         else:
-            resolved_action = BrowserAction(
-                action=step.action,
-                selector=step.target,
-                value=step.value,
-                wait_ms=500
-            )
-        
-        result = await browser_session.execute_action(resolved_action)
+            # Simple actions bypass reasoning
+            if step.action == "navigate":
+                result = await browser_session.navigate(step.value or step.target)
+            elif step.action == "wait":
+                result = await browser_session.wait(int(step.value) if step.value else 1000)
+            else:
+                resolved_action = BrowserAction(
+                    action=step.action,
+                    selector=step.target,
+                    value=step.value,
+                    wait_ms=500
+                )
+                result = await browser_session.execute_action(resolved_action)
         
         await browser_session.screenshot(f"{feature_name}_{step.action}")
         
