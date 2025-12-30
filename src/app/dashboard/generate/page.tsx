@@ -102,10 +102,14 @@ export default function GeneratePage() {
     const pollStatus = async () => {
       try {
         const response = await fetch(`/api/demos/${demoId}/status`)
-        if (response.ok) {
-          const status: DemoStatus = await response.json()
-          
-          switch (status.status?.toLowerCase()) {
+          if (response.ok) {
+            const status: any = await response.json()
+            
+            if (status.session?.id) {
+              setSessionId(status.session.id)
+            }
+
+            switch (status.status?.toLowerCase()) {
             case "pending":
               setProgress(15)
               setCurrentAction("Queued for processing...")
