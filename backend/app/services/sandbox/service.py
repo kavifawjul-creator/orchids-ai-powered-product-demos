@@ -4,7 +4,7 @@ import json
 from typing import Optional, Dict, Any, List, Callable
 from datetime import datetime
 
-from daytona import Daytona, DaytonaConfig, CreateSandboxParams
+from daytona_sdk import Daytona, DaytonaConfig, CreateSandboxParams
 
 from app.core.config import settings
 from app.models.sandbox import (
