@@ -57,22 +57,43 @@ export default function DashboardPage() {
   const [demos, setDemos] = useState<any[]>([])
   const [loading, setLoading] = useState(true)
   const [stats, setStats] = useState({ views: 0, activeAgents: 0, avgTime: "14m" })
+  const [workspaces, setWorkspaces] = useState<any[]>([])
+  const [currentWorkspace, setCurrentWorkspace] = useState<any>(null)
 
   useEffect(() => {
     async function fetchData() {
-      // Fetch Demos
-      const { data: demosData } = await supabase
-        .from('demos')
-        .select('*')
-        .order('created_at', { ascending: false })
+      // 1. Fetch/Create Workspace
+      const { data: wsData } = await supabase.from('workspaces').select('*')
+      if (wsData && wsData.length > 0) {
+        setWorkspaces(wsData)
+        setCurrentWorkspace(wsData[0])
+      } else {
+        // Create a default workspace if none exists (demo purposes)
+        const { data: newWs } = await supabase.from('workspaces').insert({
+          name: "My Workspace",
+          owner_id: "00000000-0000-0000-0000-000000000000" // Placeholder
+        }).select().single()
+        if (newWs) {
+          setWorkspaces([newWs])
+          setCurrentWorkspace(newWs)
+        }
+      }
+
+      // 2. Fetch Demos (optionally filter by workspace)
+      let query = supabase.from('demos').select('*').order('created_at', { ascending: false })
+      if (currentWorkspace) {
+        // query = query.eq('workspace_id', currentWorkspace.id)
+      }
+      
+      const { data: demosData } = await query
       
       if (demosData) {
         setDemos(demosData)
         
-        // Count active agents (status not 'completed' or 'error')
+        // Count active agents
         const active = demosData.filter(d => ["executing", "recording", "planning", "building"].includes(d.status?.toLowerCase())).length
         
-        // Fetch Views count from analytics
+        // Fetch Views count
         const { count: viewsCount } = await supabase
           .from('analytics')
           .select('*', { count: 'exact', head: true })
@@ -81,13 +102,13 @@ export default function DashboardPage() {
         setStats({
           views: viewsCount || 0,
           activeAgents: active,
-          avgTime: "12m" // Still hardcoded for now or calculated from execution logs
+          avgTime: "12m"
         })
       }
       setLoading(false)
     }
     fetchData()
-  }, [])
+  }, [currentWorkspace?.id])
 
   return (
     <div className="space-y-8">
