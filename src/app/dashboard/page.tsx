@@ -56,18 +56,37 @@ import { supabase } from "@/lib/supabase"
 export default function DashboardPage() {
   const [demos, setDemos] = useState<any[]>([])
   const [loading, setLoading] = useState(true)
+  const [stats, setStats] = useState({ views: 0, activeAgents: 0, avgTime: "14m" })
 
   useEffect(() => {
-    async function fetchDemos() {
-      const { data, error } = await supabase
+    async function fetchData() {
+      // Fetch Demos
+      const { data: demosData } = await supabase
         .from('demos')
         .select('*')
         .order('created_at', { ascending: false })
       
-      if (data) setDemos(data)
+      if (demosData) {
+        setDemos(demosData)
+        
+        // Count active agents (status not 'completed' or 'error')
+        const active = demosData.filter(d => ["executing", "recording", "planning", "building"].includes(d.status?.toLowerCase())).length
+        
+        // Fetch Views count from analytics
+        const { count: viewsCount } = await supabase
+          .from('analytics')
+          .select('*', { count: 'exact', head: true })
+          .eq('event_type', 'view')
+
+        setStats({
+          views: viewsCount || 0,
+          activeAgents: active,
+          avgTime: "12m" // Still hardcoded for now or calculated from execution logs
+        })
+      }
       setLoading(false)
     }
-    fetchDemos()
+    fetchData()
   }, [])
 
   return (
