@@ -12,6 +12,7 @@ from ...core.events import event_bus, EventTypes
 from ...core.config import settings
 from ...core.database import get_supabase
 from ..browser.service import browser_service, BrowserSession
+from ..mcp.server import mcp
 
 REASONING_PROMPT = """You are an AI agent executing a browser automation step.
 
@@ -24,14 +25,15 @@ Current step to execute:
 Page accessibility snapshot:
 {accessibility_tree}
 
-Based on the page state, provide the exact CSS selector or action parameters to execute this step.
-If the target is a description, find the best matching element.
+Based on the page state, provide the exact tool to call and its arguments.
+Available tools: navigate, click, type_text, hover, scroll, wait, screenshot.
 
 Output JSON:
 {{
-  "selector": "exact CSS selector",
-  "action": "click|type|navigate|scroll|wait",
-  "value": "value if needed",
+  "tool": "tool_name",
+  "arguments": {{
+    "arg_name": "arg_value"
+  }},
   "reasoning": "why this action"
 }}
 """
