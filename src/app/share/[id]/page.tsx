@@ -1,5 +1,5 @@
 
-import { useState, useEffect } from "react"
+import { useState, useEffect, useRef } from "react"
 import { useParams } from "next/navigation"
 import { motion, AnimatePresence } from "framer-motion"
 import { 
@@ -15,7 +15,11 @@ import {
   ExternalLink,
   Github,
   Loader2,
-  MousePointer2
+  MousePointer2,
+  Download,
+  Volume2,
+  VolumeX,
+  Maximize
 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
@@ -31,6 +35,8 @@ export default function SharePage() {
   const [isPlaying, setIsPlaying] = useState(false)
   const [activeClipIndex, setActiveClipIndex] = useState(0)
   const [progress, setProgress] = useState(0)
+  const [isMuted, setIsMuted] = useState(false)
+  const videoRef = useRef<HTMLVideoElement>(null)
 
   useEffect(() => {
     async function fetchData() {
@@ -55,10 +61,21 @@ export default function SharePage() {
   }, [id])
 
   const activeClip = clips[activeClipIndex]
+  const hasFullVideo = demo?.video_url
+
+  useEffect(() => {
+    if (videoRef.current) {
+      if (isPlaying) {
+        videoRef.current.play().catch(() => setIsPlaying(false))
+      } else {
+        videoRef.current.pause()
+      }
+    }
+  }, [isPlaying])
 
   useEffect(() => {
     let interval: any
-    if (isPlaying && clips.length > 0) {
+    if (isPlaying && clips.length > 0 && !hasFullVideo) {
       interval = setInterval(() => {
         setProgress((prev) => {
           if (prev >= 100) {
@@ -70,12 +87,28 @@ export default function SharePage() {
               return 100
             }
           }
-          return prev + 1 // Accelerated for preview
+          return prev + 1 
         })
       }, 100)
     }
     return () => clearInterval(interval)
-  }, [isPlaying, activeClipIndex, clips])
+  }, [isPlaying, activeClipIndex, clips, hasFullVideo])
+
+  const handleTimeUpdate = () => {
+    if (videoRef.current && hasFullVideo) {
+      const p = (videoRef.current.currentTime / videoRef.current.duration) * 100
+      setProgress(p)
+    }
+  }
+
+  const handleVideoEnded = () => {
+    if (!hasFullVideo && activeClipIndex < clips.length - 1) {
+      setActiveClipIndex(activeClipIndex + 1)
+      setProgress(0)
+    } else {
+      setIsPlaying(false)
+    }
+  }
 
   if (loading) {
     return <div className="min-h-screen bg-black flex items-center justify-center">
@@ -89,15 +122,19 @@ export default function SharePage() {
     </div>
   }
 
+  const currentMediaUrl = hasFullVideo ? demo.video_url : activeClip?.video_url
+
   return (
     <div className="min-h-screen bg-black text-white selection:bg-primary selection:text-white">
       {/* Navigation */}
       <nav className="border-b border-white/10 px-6 py-4 flex items-center justify-between backdrop-blur-md bg-black/50 sticky top-0 z-50">
         <div className="flex items-center gap-2">
-          <div className="bg-primary p-1.5 rounded-lg shadow-lg shadow-primary/20">
-            <Video className="h-5 w-5 text-white" />
-          </div>
-          <span className="font-bold text-lg tracking-tight">AutoVid AI</span>
+          <Link href="/" className="flex items-center gap-2">
+            <div className="bg-primary p-1.5 rounded-lg shadow-lg shadow-primary/20">
+              <Video className="h-5 w-5 text-white" />
+            </div>
+            <span className="font-bold text-lg tracking-tight">AutoVid AI</span>
+          </Link>
         </div>
         <div className="flex items-center gap-4">
           <Link href="/dashboard/new">
@@ -119,20 +156,35 @@ export default function SharePage() {
               <div className="absolute -inset-1 bg-gradient-to-r from-primary/50 to-blue-500/50 rounded-[2rem] blur-2xl opacity-20 group-hover:opacity-30 transition-opacity" />
               <Card className="relative overflow-hidden bg-zinc-950 border-white/10 shadow-2xl rounded-[1.5rem] aspect-video">
                 <AnimatePresence mode="wait">
-                  <motion.div
-                    key={activeClipIndex}
-                    initial={{ opacity: 0, scale: 1.1 }}
-                    animate={{ opacity: 1, scale: 1 }}
-                    exit={{ opacity: 0, scale: 0.9 }}
-                    transition={{ duration: 0.6 }}
-                    className="absolute inset-0"
-                  >
-                    <img 
-                      src={activeClip.thumbnail_url} 
-                      alt={activeClip.title} 
-                      className="w-full h-full object-cover opacity-80"
+                  {currentMediaUrl ? (
+                    <motion.video
+                      key={currentMediaUrl}
+                      ref={videoRef}
+                      src={currentMediaUrl}
+                      className="w-full h-full object-cover"
+                      onTimeUpdate={handleTimeUpdate}
+                      onEnded={handleVideoEnded}
+                      muted={isMuted}
+                      initial={{ opacity: 0 }}
+                      animate={{ opacity: 1 }}
+                      exit={{ opacity: 0 }}
                     />
-                  </motion.div>
+                  ) : (
+                    <motion.div
+                      key={activeClipIndex}
+                      initial={{ opacity: 0, scale: 1.1 }}
+                      animate={{ opacity: 1, scale: 1 }}
+                      exit={{ opacity: 0, scale: 0.9 }}
+                      transition={{ duration: 0.6 }}
+                      className="absolute inset-0"
+                    >
+                      <img 
+                        src={activeClip.thumbnail_url} 
+                        alt={activeClip.title} 
+                        className="w-full h-full object-cover opacity-80"
+                      />
+                    </motion.div>
+                  )}
                 </AnimatePresence>
 
                 {/* Overlays */}
@@ -177,8 +229,8 @@ export default function SharePage() {
                 )}
 
                 {/* Overlay UI */}
-                <div className="absolute inset-0 flex flex-col justify-between p-6 z-10">
-                  <div className="flex justify-between items-start">
+                <div className="absolute inset-0 flex flex-col justify-between p-6 z-10 pointer-events-none">
+                  <div className="flex justify-between items-start pointer-events-auto">
                     <Badge className="bg-black/60 backdrop-blur-md border-white/10 text-white/90 text-[10px] uppercase tracking-widest px-3 py-1">
                       <Globe className="h-3 w-3 mr-1.5 inline" /> Public Demo
                     </Badge>
@@ -192,21 +244,23 @@ export default function SharePage() {
                       whileHover={{ scale: 1.1 }}
                       whileTap={{ scale: 0.9 }}
                       onClick={() => setIsPlaying(true)}
-                      className="self-center bg-white/20 hover:bg-white/30 backdrop-blur-xl border border-white/30 rounded-full p-8 shadow-2xl group/play transition-all"
+                      className="self-center bg-white/20 hover:bg-white/30 backdrop-blur-xl border border-white/30 rounded-full p-8 shadow-2xl group/play transition-all pointer-events-auto"
                     >
                       <Play className="h-12 w-12 text-white fill-white transition-transform group-hover/play:scale-110" />
                     </motion.button>
                   )}
 
-                  <div className="space-y-4">
+                  <div className="space-y-4 pointer-events-auto">
                     {/* Progress Bar */}
-                    <div className="h-1.5 w-full bg-white/10 rounded-full overflow-hidden cursor-pointer backdrop-blur-sm">
+                    <div className="h-1.5 w-full bg-white/10 rounded-full overflow-hidden cursor-pointer backdrop-blur-sm group/progress">
                       <motion.div 
-                        className="h-full" 
+                        className="h-full relative" 
                         style={{ backgroundColor: demo.brand_color || "#7c3aed", boxShadow: `0 0 15px ${demo.brand_color || "#7c3aed"}80` }}
                         animate={{ width: `${progress}%` }}
                         transition={{ duration: 0.1 }}
-                      />
+                      >
+                         <div className="absolute right-0 top-1/2 -translate-y-1/2 w-3 h-3 bg-white rounded-full scale-0 group-hover/progress:scale-100 transition-transform" />
+                      </motion.div>
                     </div>
                     
                     {/* Controls */}
@@ -224,15 +278,29 @@ export default function SharePage() {
                         <button className="hover:text-white transition-colors">
                           <SkipForward className="h-5 w-5 fill-current" />
                         </button>
+                        <div className="flex items-center gap-2">
+                           <button onClick={() => setIsMuted(!isMuted)} className="hover:text-white transition-colors">
+                             {isMuted ? <VolumeX className="h-5 w-5" /> : <Volume2 className="h-5 w-5" />}
+                           </button>
+                        </div>
                         <span className="text-sm font-mono tracking-tighter ml-2">
-                          0:{Math.floor(progress / 5).toString().padStart(2, '0')} / {activeClip.duration}
+                          {hasFullVideo && videoRef.current ? 
+                            `${Math.floor(videoRef.current.currentTime / 60)}:${Math.floor(videoRef.current.currentTime % 60).toString().padStart(2, '0')}` : 
+                            `0:${Math.floor(progress / 5).toString().padStart(2, '0')}`
+                          } / {hasFullVideo && videoRef.current ? 
+                            `${Math.floor(videoRef.current.duration / 60)}:${Math.floor(videoRef.current.duration % 60).toString().padStart(2, '0')}` : 
+                            activeClip.duration
+                          }
                         </span>
                       </div>
                       <div className="flex items-center gap-4">
                          <div className="flex items-center gap-1.5 text-[10px] font-bold bg-white/5 px-2 py-1 rounded border border-white/10">
                            <div className="h-2 w-2 rounded-full bg-primary animate-pulse" />
-                           HD PREVIEW
+                           {hasFullVideo ? "4K MASTER" : "HD PREVIEW"}
                          </div>
+                        <button className="hover:text-white transition-colors">
+                          <Maximize className="h-5 w-5" />
+                        </button>
                         <button className="hover:text-white transition-colors">
                           <Settings className="h-5 w-5" />
                         </button>
@@ -242,7 +310,7 @@ export default function SharePage() {
                 </div>
 
                 {/* Autonomous Agent Cursor */}
-                {isPlaying && (
+                {isPlaying && !hasFullVideo && (
                   <motion.div 
                     className="absolute z-20 pointer-events-none"
                     animate={{ 
@@ -276,13 +344,20 @@ export default function SharePage() {
                   <Button variant="outline" className="border-white/10 bg-white/5 hover:bg-white/10 rounded-full gap-2 px-6">
                     <Share2 className="h-4 w-4" /> Share
                   </Button>
+                  {hasFullVideo && (
+                    <a href={demo.video_url} download target="_blank">
+                      <Button variant="outline" className="border-white/10 bg-white/5 hover:bg-white/10 rounded-full gap-2 px-6">
+                        <Download className="h-4 w-4" /> Download
+                      </Button>
+                    </a>
+                  )}
                   <Button className="bg-primary hover:bg-primary/90 rounded-full gap-2 px-6 shadow-lg shadow-primary/20">
                     <Github className="h-4 w-4" /> Source Code
                   </Button>
                 </div>
               </div>
 
-              <Separator className="bg-white/10" />
+              <div className="h-[1px] w-full bg-white/10" />
 
               <div className="space-y-4">
                 <p className="text-lg text-white/70 leading-relaxed max-w-3xl">
@@ -311,6 +386,10 @@ export default function SharePage() {
                       setActiveClipIndex(index)
                       setProgress(0)
                       setIsPlaying(true)
+                      if (hasFullVideo && videoRef.current) {
+                        // In a real app, we'd map clip start times to the full video
+                        // For now, let's just show the clip
+                      }
                     }}
                     className={`w-full text-left group transition-all p-3 rounded-2xl border ${activeClipIndex === index ? 'bg-primary/10 border-primary/50' : 'bg-white/5 border-transparent hover:bg-white/10'}`}
                   >
@@ -367,8 +446,4 @@ export default function SharePage() {
       </footer>
     </div>
   )
-}
-
-function Separator({ className }: { className?: string }) {
-  return <div className={`h-[1px] w-full ${className}`} />
 }
