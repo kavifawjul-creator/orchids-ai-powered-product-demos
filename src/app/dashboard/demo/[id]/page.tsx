@@ -253,23 +253,41 @@ export default function DemoDetailPage() {
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 flex-1 overflow-hidden">
         {/* Main Editor Area */}
         <div className="lg:col-span-8 flex flex-col gap-6 overflow-hidden">
-          {/* Video Player Placeholder */}
+            {/* Video Player */}
             <Card className="flex-1 bg-black overflow-hidden relative group border-none shadow-2xl rounded-2xl aspect-video max-h-[500px]">
               <AnimatePresence mode="wait">
                 <motion.div
-                  key={activeClipId}
+                  key={activeClipId + (isPlaying ? "_playing" : "_static")}
                   initial={{ opacity: 0 }}
                   animate={{ opacity: 1 }}
                   exit={{ opacity: 0 }}
                   className="absolute inset-0"
                 >
-                  <img 
-                    src={activeClip?.thumbnail_url || ""} 
-                    alt={activeClip?.title} 
-                    className="w-full h-full object-cover opacity-60"
-                  />
+                  {isPlaying && activeClip?.video_url ? (
+                    <video
+                      src={activeClip.video_url}
+                      className="w-full h-full object-cover"
+                      autoPlay
+                      onEnded={() => setIsPlaying(false)}
+                      onTimeUpdate={(e) => {
+                        const video = e.currentTarget;
+                        setPlaybackProgress((video.currentTime / video.duration) * 100);
+                      }}
+                    />
+                  ) : activeClip?.thumbnail_url ? (
+                    <img 
+                      src={activeClip.thumbnail_url} 
+                      alt={activeClip.title} 
+                      className="w-full h-full object-cover opacity-60"
+                    />
+                  ) : (
+                    <div className="w-full h-full flex items-center justify-center bg-muted">
+                      <Video className="h-12 w-12 text-muted-foreground/20" />
+                    </div>
+                  )}
                 </motion.div>
               </AnimatePresence>
+
 
               {/* Title Card Overlay */}
               <AnimatePresence>
