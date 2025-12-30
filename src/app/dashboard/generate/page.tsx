@@ -194,7 +194,58 @@ export default function GeneratePage() {
   }, [demoId])
 
   React.useEffect(() => {
-    if (isFinished || hasError || !demoId) return
+    if (!sessionId) return
+
+    const wsUrl = `ws://${window.location.hostname}:8000/ws/session:${sessionId}`
+    const ws = new WebSocket(wsUrl)
+
+    ws.onmessage = (event) => {
+      const message = JSON.parse(event.data)
+      
+      if (message.type === "agent_update") {
+        const { update_type, data } = message
+        addLog({
+          type: update_type === "action" ? "action" : 
+                update_type === "reasoning" ? "reasoning" :
+                update_type === "milestone" ? "milestone" :
+                update_type === "error" ? "error" : "verification",
+          text: data.message || data.action || data.reasoning || "Update received",
+          timestamp: Date.now()
+        })
+
+        if (data.action) setCurrentAction(data.action)
+        if (data.feature_name) setCurrentFeature(data.feature_name)
+        if (data.step_index !== undefined) {
+          setStepProgress({
+            current: data.step_index + 1,
+            total: data.total_steps || stepProgress.total
+          })
+        }
+      } else if (message.type === "frame") {
+        setCurrentFrame(message.frame)
+      } else if (message.type === "status_update") {
+        if (message.data?.milestones_count !== undefined) {
+          setMilestonesCount(message.data.milestones_count)
+        }
+      }
+    }
+
+    ws.onopen = () => {
+      addLog({ type: "verification", text: "Connected to live agent stream", timestamp: Date.now() })
+      ws.send(JSON.stringify({ type: "get_frame", session_id: sessionId }))
+    }
+
+    ws.onerror = (error) => {
+      console.error("WebSocket error:", error)
+    }
+
+    return () => {
+      ws.close()
+    }
+  }, [sessionId, addLog, stepProgress.total])
+
+  React.useEffect(() => {
+    if (isFinished || hasError || !demoId || sessionId) return
 
     const simulateProgress = () => {
       const actions = [
