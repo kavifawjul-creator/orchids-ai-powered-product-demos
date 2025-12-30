@@ -79,6 +79,16 @@ export default function SharePage() {
     if (videoRef.current) {
       if (isPlaying) {
         videoRef.current.play().catch(() => setIsPlaying(false))
+        // Track play event
+        fetch("/api/analytics/track", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            demo_id: id,
+            event_type: "play",
+            metadata: { clip_index: activeClipIndex }
+          })
+        }).catch(console.error)
       } else {
         videoRef.current.pause()
       }
