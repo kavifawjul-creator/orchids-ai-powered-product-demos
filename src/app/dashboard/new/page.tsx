@@ -55,13 +55,34 @@ export default function NewDemoPage() {
   const [prompt, setPrompt] = React.useState("")
   const [isGenerating, setIsGenerating] = React.useState(false)
 
-  const handleGenerate = (e: React.FormEvent) => {
+  const handleGenerate = async (e: React.FormEvent) => {
     e.preventDefault()
     setIsGenerating(true)
-    // Simulate some initial validation/setup
-    setTimeout(() => {
-      router.push(`/dashboard/generate?repo=${encodeURIComponent(repoUrl)}&prompt=${encodeURIComponent(prompt)}`)
-    }, 1500)
+    
+    try {
+      const response = await fetch("/api/demos/generate", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          repo_url: repoUrl,
+          prompt: prompt,
+        }),
+      })
+
+      const data = await response.json()
+
+      if (!response.ok) {
+        throw new Error(data.error || "Failed to start generation")
+      }
+
+      router.push(`/dashboard/generate?id=${data.demo_id}`)
+    } catch (error) {
+      console.error("Generation error:", error)
+      setIsGenerating(false)
+      // You might want to show a toast here
+    }
   }
 
   const applyTemplate = (templatePrompt: string) => {
