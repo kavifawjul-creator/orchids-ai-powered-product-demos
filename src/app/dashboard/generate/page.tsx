@@ -209,8 +209,9 @@ function GeneratePageContent() {
   React.useEffect(() => {
     if (!sessionId) return
 
-    const wsUrl = `ws://${window.location.hostname}:8000/ws/session:${sessionId}`
-    const ws = new WebSocket(wsUrl)
+      const wsBaseUrl = process.env.NEXT_PUBLIC_WS_URL || `ws://${window.location.hostname}:8000`
+      const wsUrl = `${wsBaseUrl}/ws/session:${sessionId}`
+      const ws = new WebSocket(wsUrl)
 
     ws.onmessage = (event) => {
       const message = JSON.parse(event.data)

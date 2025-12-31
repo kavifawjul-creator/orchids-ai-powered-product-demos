@@ -309,5 +309,39 @@ class ProjectService:
             return None
         return await sandbox_service.get_sandbox(project.sandbox_id)
 
+    async def get_project_by_repo(self, repo_url: str) -> Optional[ProjectInfo]:
+        try:
+            result = self.supabase.table("projects").select("*").eq("repo_url", repo_url).execute()
+            
+            if not result.data:
+                return None
+
+            row = result.data[0]
+            return ProjectInfo(
+                id=row["id"],
+                repo_url=row["repo_url"],
+                title=row.get("title"),
+                description=row.get("description"),
+                status=ProjectStatus(row["status"]) if row.get("status") else ProjectStatus.PENDING,
+                build_system=row.get("build_system"),
+                preview_url=row.get("preview_url"),
+                sandbox_id=row.get("sandbox_id"),
+                metadata=json.loads(row["metadata"]) if row.get("metadata") else {},
+                created_at=datetime.fromisoformat(row["created_at"].replace("Z", "+00:00")) if row.get("created_at") else datetime.utcnow(),
+                updated_at=datetime.fromisoformat(row["updated_at"].replace("Z", "+00:00")) if row.get("updated_at") else datetime.utcnow(),
+            )
+        except Exception as e:
+            logger.error(f"Failed to get project by repo {repo_url}: {e}")
+            return None
+
+    async def create_project_simple(self, repo_url: str, title: Optional[str] = None) -> Optional[ProjectInfo]:
+        request = ProjectCreateRequest(
+            repo_url=repo_url,
+            title=title,
+            auto_start_sandbox=False
+        )
+        response = await self.create_project(request)
+        return response.project if response.success else None
+
 
 project_service = ProjectService()
