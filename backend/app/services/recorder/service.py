@@ -1,6 +1,7 @@
 import asyncio
 import os
 import subprocess
+import logging
 from typing import Optional, Dict, Any, List
 from datetime import datetime
 from dataclasses import dataclass, field
@@ -8,6 +9,9 @@ from ...models.schemas import Clip, RecordingEvent
 from ...core.events import event_bus, EventTypes
 from ...core.config import settings
 from ...core.database import get_supabase
+from ..storage.service import storage_service
+
+logger = logging.getLogger(__name__)
 
 @dataclass
 class RecordingSession:
@@ -97,6 +101,8 @@ class RecorderService:
             duration = end - start
             
             clip_path = f"{self._recording_dir}/{session_id}_clip_{idx}.webm"
+            clip_id = f"{session_id}_clip_{idx}"
+            video_url = None
             
             if recording.video_path and os.path.exists(recording.video_path):
                 await self._extract_clip(
@@ -105,6 +111,18 @@ class RecorderService:
                     start,
                     duration
                 )
+                
+                if os.path.exists(clip_path):
+                    video_url = await storage_service.upload_clip_video(
+                        demo_id=recording.demo_id,
+                        clip_id=clip_id,
+                        file_path=clip_path
+                    )
+                    if video_url:
+                        logger.info(f"Clip {clip_id} uploaded: {video_url}")
+                    else:
+                        logger.warning(f"Failed to upload clip {clip_id}, using local path")
+                        video_url = clip_path
             
             clip = Clip(
                 demo_id=recording.demo_id,
@@ -113,7 +131,7 @@ class RecorderService:
                 start_time=start,
                 end_time=end,
                 duration=self._format_duration(duration),
-                video_url=clip_path if os.path.exists(clip_path) else None,
+                video_url=video_url,
                 order_index=idx
             )
             
@@ -166,6 +184,7 @@ class RecorderService:
             "demo_id": clip.demo_id,
             "title": clip.title,
             "duration": clip.duration,
+            "video_url": clip.video_url,
             "thumbnail_url": clip.thumbnail_url,
             "narration": clip.narration,
             "overlay": clip.overlay,
@@ -174,7 +193,11 @@ class RecorderService:
             "created_at": clip.created_at.isoformat()
         }
         
-        self.supabase.table("clips").upsert(clip_dict).execute()
+        try:
+            self.supabase.table("clips").upsert(clip_dict).execute()
+            logger.info(f"Saved clip {clip.id} to database with video_url: {clip.video_url}")
+        except Exception as e:
+            logger.error(f"Failed to save clip {clip.id}: {e}")
     
     def _format_duration(self, seconds: float) -> str:
         mins = int(seconds // 60)
