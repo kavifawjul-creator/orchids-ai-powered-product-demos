@@ -2,8 +2,11 @@ import asyncio
 import logging
 import time
 import base64
+import json
 from typing import Optional, Dict, Any, List, Callable
 from datetime import datetime
+
+from openai import AsyncOpenAI
 
 from app.core.config import settings
 from app.models.agent import (
@@ -16,12 +19,43 @@ from app.models.agent import (
     AgentCommand,
     AgentSessionRequest,
     AgentSessionResponse,
+    StateVerificationResult,
+    RecoveryAction,
 )
 from app.models.intent import ExecutionPlan, ExecutionStep, StepType
 from app.services.browser import browser_service, BrowserAction, BrowserActionType
 from app.services.intent import intent_service
 
 logger = logging.getLogger(__name__)
+
+STATE_VERIFICATION_PROMPT = """You are a UI state verification agent. Analyze the current screenshot and determine if the UI is ready for the next action.
+
+NEXT ACTION TO PERFORM:
+- Type: {step_type}
+- Target: {target}
+- Description: {description}
+- Expected precondition: {expected_outcome}
+
+Analyze the screenshot and respond with a JSON object:
+{{
+  "ready": true/false,
+  "issue": "Description of any blocking issue (null if ready)",
+  "suggestion": "How to resolve the issue (null if ready)",
+  "recovery_action": "none" | "close_modal" | "scroll_into_view" | "wait_for_loading" | "click_overlay" | "refresh_page" | "retry",
+  "confidence": 0.0-1.0,
+  "screenshot_analysis": "Brief description of what you see in the screenshot"
+}}
+
+Common issues to check:
+1. Modal/dialog blocking the target element
+2. Loading spinner or skeleton visible
+3. Toast/notification covering content
+4. Cookie consent banner blocking
+5. Target element not visible (needs scroll)
+6. Overlay or backdrop covering the page
+
+If the UI looks ready and the target should be accessible, set ready=true.
+Respond ONLY with the JSON object."""
 
 
 class AgentExecutionService:
@@ -31,6 +65,13 @@ class AgentExecutionService:
         self._tasks: Dict[str, asyncio.Task] = {}
         self._event_callbacks: List[Callable] = []
         self._pause_events: Dict[str, asyncio.Event] = {}
+        self._openai: Optional[AsyncOpenAI] = None
+
+    @property
+    def openai(self) -> AsyncOpenAI:
+        if self._openai is None:
+            self._openai = AsyncOpenAI(api_key=settings.OPENAI_API_KEY)
+        return self._openai
 
     def register_event_callback(self, callback: Callable):
         self._event_callbacks.append(callback)
@@ -184,10 +225,47 @@ class AgentExecutionService:
         ))
 
         try:
-            if step.screenshot_before and session.config.auto_screenshot:
+            screenshot_b64 = None
+            if session.config.auto_screenshot:
                 screenshot = await browser_service.take_screenshot(session.browser_session_id)
                 if screenshot:
-                    execution.screenshot_before = base64.b64encode(screenshot).decode()
+                    screenshot_b64 = base64.b64encode(screenshot).decode()
+                    if step.screenshot_before:
+                        execution.screenshot_before = screenshot_b64
+
+            if screenshot_b64 and session.config.enable_recovery:
+                verification = await self.verify_state(session, step, screenshot_b64)
+                
+                await self._emit_event(AgentEvent(
+                    event_type="STATE_VERIFIED",
+                    session_id=session.id,
+                    data={
+                        "step_id": step.id,
+                        "ready": verification.ready,
+                        "confidence": verification.confidence,
+                        "issue": verification.issue,
+                        "analysis": verification.screenshot_analysis,
+                    },
+                ))
+
+                if not verification.ready:
+                    logger.warning(f"State verification failed: {verification.issue}")
+                    
+                    if verification.recovery_action != RecoveryAction.NONE:
+                        recovery_success = await self._execute_recovery(session, verification)
+                        
+                        if recovery_success:
+                            await asyncio.sleep(0.5)
+                            screenshot = await browser_service.take_screenshot(session.browser_session_id)
+                            if screenshot:
+                                screenshot_b64 = base64.b64encode(screenshot).decode()
+                                re_verify = await self.verify_state(session, step, screenshot_b64)
+                                if not re_verify.ready:
+                                    raise Exception(f"State not ready after recovery: {re_verify.issue}")
+                        else:
+                            raise Exception(f"Recovery failed: {verification.issue}")
+                    else:
+                        raise Exception(f"State not ready: {verification.issue}")
 
             action = self._step_to_browser_action(step)
             if action:
@@ -295,6 +373,171 @@ class AgentExecutionService:
                         "importance": milestone.importance,
                     },
                 ))
+
+    async def verify_state(
+        self,
+        session: AgentSession,
+        step: ExecutionStep,
+        screenshot_b64: str,
+    ) -> StateVerificationResult:
+        if not settings.OPENAI_API_KEY:
+            logger.warning("No OpenAI API key, skipping state verification")
+            return StateVerificationResult(ready=True, confidence=0.5)
+
+        if step.step_type in [StepType.NARRATE, StepType.WAIT, StepType.SCREENSHOT]:
+            return StateVerificationResult(ready=True, confidence=1.0)
+
+        prompt = STATE_VERIFICATION_PROMPT.format(
+            step_type=step.step_type.value,
+            target=step.target or "N/A",
+            description=step.description,
+            expected_outcome=step.expected_outcome or "Element should be visible and accessible",
+        )
+
+        try:
+            response = await self.openai.chat.completions.create(
+                model="gpt-4o-mini",
+                messages=[
+                    {
+                        "role": "user",
+                        "content": [
+                            {"type": "text", "text": prompt},
+                            {
+                                "type": "image_url",
+                                "image_url": {
+                                    "url": f"data:image/png;base64,{screenshot_b64}",
+                                    "detail": "low",
+                                },
+                            },
+                        ],
+                    }
+                ],
+                max_tokens=512,
+            )
+
+            result_text = response.choices[0].message.content
+            result_text = result_text.strip()
+            if result_text.startswith("```"):
+                result_text = result_text.split("```")[1]
+                if result_text.startswith("json"):
+                    result_text = result_text[4:]
+
+            result = json.loads(result_text)
+
+            recovery_action = RecoveryAction.NONE
+            try:
+                recovery_action = RecoveryAction(result.get("recovery_action", "none"))
+            except ValueError:
+                pass
+
+            return StateVerificationResult(
+                ready=result.get("ready", True),
+                issue=result.get("issue"),
+                suggestion=result.get("suggestion"),
+                recovery_action=recovery_action,
+                confidence=result.get("confidence", 0.8),
+                screenshot_analysis=result.get("screenshot_analysis"),
+            )
+
+        except Exception as e:
+            logger.error(f"State verification failed: {e}")
+            return StateVerificationResult(ready=True, confidence=0.3, issue=str(e))
+
+    async def _execute_recovery(
+        self,
+        session: AgentSession,
+        verification: StateVerificationResult,
+    ) -> bool:
+        if verification.recovery_action == RecoveryAction.NONE:
+            return False
+
+        logger.info(f"Attempting recovery action: {verification.recovery_action.value}")
+
+        await self._emit_event(AgentEvent(
+            event_type="RECOVERY_STARTED",
+            session_id=session.id,
+            data={
+                "action": verification.recovery_action.value,
+                "issue": verification.issue,
+            },
+        ))
+
+        success = False
+
+        try:
+            if verification.recovery_action == RecoveryAction.CLOSE_MODAL:
+                action = BrowserAction(
+                    action_type=BrowserActionType.KEYBOARD,
+                    value="Escape",
+                )
+                result = await browser_service.execute_action(session.browser_session_id, action)
+                success = result.success
+                if not success:
+                    close_selectors = [
+                        "[aria-label='Close']",
+                        "button[class*='close']",
+                        "[data-dismiss='modal']",
+                        ".modal-close",
+                        "button:has(svg[class*='close'])",
+                    ]
+                    for selector in close_selectors:
+                        action = BrowserAction(
+                            action_type=BrowserActionType.CLICK,
+                            selector=selector,
+                        )
+                        result = await browser_service.execute_action(session.browser_session_id, action)
+                        if result.success:
+                            success = True
+                            break
+
+            elif verification.recovery_action == RecoveryAction.SCROLL_INTO_VIEW:
+                action = BrowserAction(
+                    action_type=BrowserActionType.SCROLL,
+                    options={"direction": "down", "amount": 300},
+                )
+                result = await browser_service.execute_action(session.browser_session_id, action)
+                success = result.success
+
+            elif verification.recovery_action == RecoveryAction.WAIT_FOR_LOADING:
+                await asyncio.sleep(2)
+                success = True
+
+            elif verification.recovery_action == RecoveryAction.CLICK_OVERLAY:
+                action = BrowserAction(
+                    action_type=BrowserActionType.KEYBOARD,
+                    value="Escape",
+                )
+                result = await browser_service.execute_action(session.browser_session_id, action)
+                success = result.success
+
+            elif verification.recovery_action == RecoveryAction.REFRESH_PAGE:
+                action = BrowserAction(
+                    action_type=BrowserActionType.NAVIGATE,
+                    options={"refresh": True},
+                )
+                result = await browser_service.execute_action(session.browser_session_id, action)
+                success = result.success
+                if success:
+                    await asyncio.sleep(1)
+
+            elif verification.recovery_action == RecoveryAction.RETRY:
+                await asyncio.sleep(0.5)
+                success = True
+
+        except Exception as e:
+            logger.error(f"Recovery action failed: {e}")
+            success = False
+
+        await self._emit_event(AgentEvent(
+            event_type="RECOVERY_COMPLETED",
+            session_id=session.id,
+            data={
+                "action": verification.recovery_action.value,
+                "success": success,
+            },
+        ))
+
+        return success
 
     async def handle_command(self, session_id: str, command: AgentCommand, params: Dict[str, Any] = None) -> bool:
         session = self._sessions.get(session_id)

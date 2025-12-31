@@ -104,3 +104,22 @@ class AgentSessionResponse(BaseModel):
     session: Optional[AgentSession] = None
     message: str = ""
     error: Optional[str] = None
+
+
+class RecoveryAction(str, Enum):
+    NONE = "none"
+    CLOSE_MODAL = "close_modal"
+    SCROLL_INTO_VIEW = "scroll_into_view"
+    WAIT_FOR_LOADING = "wait_for_loading"
+    CLICK_OVERLAY = "click_overlay"
+    REFRESH_PAGE = "refresh_page"
+    RETRY = "retry"
+
+
+class StateVerificationResult(BaseModel):
+    ready: bool = True
+    issue: Optional[str] = None
+    suggestion: Optional[str] = None
+    recovery_action: RecoveryAction = RecoveryAction.NONE
+    confidence: float = 1.0
+    screenshot_analysis: Optional[str] = None
