@@ -37,6 +37,16 @@ class Settings(BaseSettings):
     class Config:
         env_file = ".env"
         case_sensitive = True
+        extra = "ignore"
+
+    def __init__(self, **values):
+        import os
+        # Fallback for Supabase keys if prefixed ones exist
+        if not values.get("SUPABASE_URL"):
+            values["SUPABASE_URL"] = os.getenv("NEXT_PUBLIC_SUPABASE_URL")
+        if not values.get("SUPABASE_ANON_KEY"):
+            values["SUPABASE_ANON_KEY"] = os.getenv("NEXT_PUBLIC_SUPABASE_ANON_KEY")
+        super().__init__(**values)
 
 @lru_cache()
 def get_settings() -> Settings:

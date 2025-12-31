@@ -47,23 +47,32 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
   const [loading, setLoading] = React.useState(true)
 
   React.useEffect(() => {
-    const getUser = async () => {
-      const { data: { user } } = await supabase.auth.getUser()
-      if (user) {
-        const { data: profile } = await supabase
-          .from('profiles')
-          .select('full_name, avatar_url')
-          .eq('id', user.id)
-          .single()
+      const getUser = async () => {
+        try {
+          const { data: { user } } = await supabase.auth.getUser()
+          if (user) {
+            const { data: profile, error: profileError } = await supabase
+              .from('profiles')
+              .select('full_name, avatar_url')
+              .eq('id', user.id)
+              .maybeSingle()
 
-        setUserData({
-          name: profile?.full_name || user.user_metadata?.full_name || user.email?.split("@")[0],
-          email: user.email,
-          avatar: profile?.avatar_url || user.user_metadata?.avatar_url,
-        })
+            if (profileError && profileError.code !== 'PGRST116') {
+              console.error("Error fetching profile:", profileError)
+            }
+
+            setUserData({
+              name: profile?.full_name || user.user_metadata?.full_name || user.email?.split("@")[0],
+              email: user.email,
+              avatar: profile?.avatar_url || user.user_metadata?.avatar_url,
+            })
+          }
+        } catch (error) {
+          console.error("Auth error in AppSidebar:", error)
+        } finally {
+          setLoading(false)
+        }
       }
-      setLoading(false)
-    }
     getUser()
   }, [supabase])
 
