@@ -11,12 +11,17 @@ import {
   ExternalLink,
   Eye,
   ChevronDown,
-  Users
+  Users,
+  Globe,
+  Lock,
+  Trash2,
+  Share2
 } from "lucide-react"
 import Link from "next/link"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
+import { Switch } from "@/components/ui/switch"
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -25,28 +30,60 @@ import {
   DropdownMenuSeparator,
   DropdownMenuLabel,
 } from "@/components/ui/dropdown-menu"
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog"
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog"
 
 import { useState, useEffect } from "react"
-import { supabase } from "@/lib/supabase"
+import { createClient } from "@/lib/supabase/client"
+import { Input } from "@/components/ui/input"
+import { Label } from "@/components/ui/label"
 
 export default function DashboardPage() {
+  const supabase = createClient()
   const [demos, setDemos] = useState<any[]>([])
   const [loading, setLoading] = useState(true)
   const [stats, setStats] = useState({ views: 0, activeAgents: 0, avgTime: "14m" })
   const [workspaces, setWorkspaces] = useState<any[]>([])
   const [currentWorkspace, setCurrentWorkspace] = useState<any>(null)
+  const [settingsDemo, setSettingsDemo] = useState<any>(null)
+  const [deleteDemo, setDeleteDemo] = useState<any>(null)
+  const [shareDemo, setShareDemo] = useState<any>(null)
+  const [copied, setCopied] = useState(false)
 
   useEffect(() => {
     async function fetchData() {
-      // 1. Fetch/Create Workspace
-      const { data: wsData } = await supabase.from('workspaces').select('*')
+      const { data: { user } } = await supabase.auth.getUser()
+      if (!user) return
+
+      const { data: wsData } = await supabase
+        .from('workspaces')
+        .select('*')
+        .eq('owner_id', user.id)
+
       if (wsData && wsData.length > 0) {
         setWorkspaces(wsData)
         if (!currentWorkspace) setCurrentWorkspace(wsData[0])
       } else {
         const { data: newWs } = await supabase.from('workspaces').insert({
           name: "Personal Workspace",
-          owner_id: "00000000-0000-0000-0000-000000000000"
+          owner_id: user.id,
+          slug: `workspace-${user.id.slice(0, 8)}`
         }).select().single()
         if (newWs) {
           setWorkspaces([newWs])
@@ -54,8 +91,14 @@ export default function DashboardPage() {
         }
       }
 
-      // 2. Fetch Demos
-      let query = supabase.from('demos').select('*').order('created_at', { ascending: false })
+      let query = supabase
+        .from('demos')
+        .select('*')
+        .order('created_at', { ascending: false })
+
+      if (currentWorkspace?.id) {
+        query = query.eq('workspace_id', currentWorkspace.id)
+      }
       
       const { data: demosData } = await query
       
@@ -77,7 +120,34 @@ export default function DashboardPage() {
       setLoading(false)
     }
     fetchData()
-  }, [currentWorkspace?.id])
+  }, [currentWorkspace?.id, supabase])
+
+  const handleTogglePublic = async (demoId: string, isPublic: boolean) => {
+    await supabase
+      .from('demos')
+      .update({ is_public: isPublic })
+      .eq('id', demoId)
+
+    setDemos(demos.map(d => d.id === demoId ? { ...d, is_public: isPublic } : d))
+    if (settingsDemo?.id === demoId) {
+      setSettingsDemo({ ...settingsDemo, is_public: isPublic })
+    }
+  }
+
+  const handleDeleteDemo = async () => {
+    if (!deleteDemo) return
+    await supabase.from('demos').delete().eq('id', deleteDemo.id)
+    setDemos(demos.filter(d => d.id !== deleteDemo.id))
+    setDeleteDemo(null)
+  }
+
+  const handleCopyShareLink = () => {
+    if (!shareDemo) return
+    const shareUrl = `${window.location.origin}/share/${shareDemo.id}`
+    navigator.clipboard.writeText(shareUrl)
+    setCopied(true)
+    setTimeout(() => setCopied(false), 2000)
+  }
 
   return (
     <div className="space-y-8">
@@ -206,6 +276,19 @@ export default function DashboardPage() {
                           <Play className="h-6 w-6 fill-current" />
                         </Button>
                       </div>
+                      <div className="absolute top-2 left-2">
+                        {demo.is_public ? (
+                          <Badge variant="outline" className="bg-green-500/20 text-green-600 border-green-500/30 flex items-center gap-1">
+                            <Globe className="h-3 w-3" />
+                            Public
+                          </Badge>
+                        ) : (
+                          <Badge variant="outline" className="bg-gray-500/20 text-gray-600 border-gray-500/30 flex items-center gap-1">
+                            <Lock className="h-3 w-3" />
+                            Private
+                          </Badge>
+                        )}
+                      </div>
                       <div className="absolute top-2 right-2 flex gap-1">
                         {["executing", "recording"].includes(demo.status?.toLowerCase()) && (
                           <Badge variant="default" className="bg-red-500 text-white border-none animate-pulse flex items-center gap-1">
@@ -242,13 +325,21 @@ export default function DashboardPage() {
                               </Button>
                             </DropdownMenuTrigger>
                             <DropdownMenuContent align="end">
-                              <DropdownMenuItem>Edit Settings</DropdownMenuItem>
-                              <DropdownMenuItem asChild>
-                                <Link href={`/share/${demo.id}`}>
-                                  Share Demo
-                                </Link>
+                              <DropdownMenuItem onClick={(e) => { e.preventDefault(); setSettingsDemo(demo); }}>
+                                Privacy Settings
                               </DropdownMenuItem>
-                              <DropdownMenuItem className="text-destructive">Delete</DropdownMenuItem>
+                              <DropdownMenuItem onClick={(e) => { e.preventDefault(); setShareDemo(demo); }}>
+                                <Share2 className="h-4 w-4 mr-2" />
+                                Share Demo
+                              </DropdownMenuItem>
+                              <DropdownMenuSeparator />
+                              <DropdownMenuItem 
+                                className="text-destructive"
+                                onClick={(e) => { e.preventDefault(); setDeleteDemo(demo); }}
+                              >
+                                <Trash2 className="h-4 w-4 mr-2" />
+                                Delete
+                              </DropdownMenuItem>
                             </DropdownMenuContent>
                           </DropdownMenu>
                         </div>
@@ -266,6 +357,128 @@ export default function DashboardPage() {
             </div>
           )}
       </div>
+
+      <Dialog open={!!settingsDemo} onOpenChange={() => setSettingsDemo(null)}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Privacy Settings</DialogTitle>
+            <DialogDescription>
+              Control who can view this demo
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div className="flex items-center justify-between p-4 rounded-lg border">
+              <div className="flex items-center gap-3">
+                {settingsDemo?.is_public ? (
+                  <Globe className="h-5 w-5 text-green-600" />
+                ) : (
+                  <Lock className="h-5 w-5 text-gray-600" />
+                )}
+                <div>
+                  <p className="font-medium">
+                    {settingsDemo?.is_public ? "Public" : "Private"}
+                  </p>
+                  <p className="text-sm text-muted-foreground">
+                    {settingsDemo?.is_public 
+                      ? "Anyone with the link can view" 
+                      : "Only you can view this demo"}
+                  </p>
+                </div>
+              </div>
+              <Switch
+                checked={settingsDemo?.is_public || false}
+                onCheckedChange={(checked) => handleTogglePublic(settingsDemo?.id, checked)}
+              />
+            </div>
+            {settingsDemo?.is_public && (
+              <div className="space-y-2">
+                <Label>Share Link</Label>
+                <div className="flex gap-2">
+                  <Input
+                    readOnly
+                    value={`${typeof window !== 'undefined' ? window.location.origin : ''}/share/${settingsDemo?.id}`}
+                  />
+                  <Button
+                    variant="outline"
+                    onClick={() => {
+                      navigator.clipboard.writeText(`${window.location.origin}/share/${settingsDemo?.id}`)
+                    }}
+                  >
+                    Copy
+                  </Button>
+                </div>
+              </div>
+            )}
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setSettingsDemo(null)}>
+              Close
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={!!shareDemo} onOpenChange={() => setShareDemo(null)}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Share Demo</DialogTitle>
+            <DialogDescription>
+              Share this demo with others
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4">
+            {!shareDemo?.is_public && (
+              <div className="p-4 rounded-lg bg-yellow-50 border border-yellow-200 text-yellow-800 text-sm">
+                This demo is private. Make it public to share with others.
+              </div>
+            )}
+            <div className="space-y-2">
+              <Label>Share Link</Label>
+              <div className="flex gap-2">
+                <Input
+                  readOnly
+                  value={`${typeof window !== 'undefined' ? window.location.origin : ''}/share/${shareDemo?.id}`}
+                />
+                <Button onClick={handleCopyShareLink}>
+                  {copied ? "Copied!" : "Copy"}
+                </Button>
+              </div>
+            </div>
+            {!shareDemo?.is_public && (
+              <Button
+                className="w-full"
+                onClick={() => {
+                  handleTogglePublic(shareDemo?.id, true)
+                  setShareDemo({ ...shareDemo, is_public: true })
+                }}
+              >
+                <Globe className="h-4 w-4 mr-2" />
+                Make Public
+              </Button>
+            )}
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      <AlertDialog open={!!deleteDemo} onOpenChange={() => setDeleteDemo(null)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Delete Demo</AlertDialogTitle>
+            <AlertDialogDescription>
+              Are you sure you want to delete "{deleteDemo?.title}"? This action cannot be undone.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={handleDeleteDemo}
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+            >
+              Delete
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   )
 }

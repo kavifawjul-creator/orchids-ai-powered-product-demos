@@ -1,40 +1,55 @@
-import { NextResponse } from 'next/server'
-import type { NextRequest } from 'next/request'
-import { createClient } from '@supabase/supabase-js'
+import { createServerClient } from '@supabase/ssr'
+import { NextResponse, type NextRequest } from 'next/server'
 
 export async function middleware(request: NextRequest) {
-  const res = NextResponse.next()
-  
-  // We need to create a supabase client specifically for the middleware
-  // because we need to check the session
-  const supabase = createClient(
+  let supabaseResponse = NextResponse.next({
+    request,
+  })
+
+  const supabase = createServerClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
+    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+    {
+      cookies: {
+        getAll() {
+          return request.cookies.getAll()
+        },
+        setAll(cookiesToSet) {
+          cookiesToSet.forEach(({ name, value }) => request.cookies.set(name, value))
+          supabaseResponse = NextResponse.next({
+            request,
+          })
+          cookiesToSet.forEach(({ name, value, options }) =>
+            supabaseResponse.cookies.set(name, value, options)
+          )
+        },
+      },
+    }
   )
 
-  // Check if we have a session
-  // Note: This is a simplified version. For production, use @supabase/ssr
-  const { data: { session } } = await supabase.auth.getSession()
+  const {
+    data: { user },
+  } = await supabase.auth.getUser()
 
   const url = new URL(request.url)
-  
-  // Protect dashboard routes
-  if (url.pathname.startsWith('/dashboard')) {
-    if (!session) {
-      return NextResponse.redirect(new URL('/login', request.url))
+
+  if (url.pathname.startsWith('/dashboard') || url.pathname.startsWith('/settings')) {
+    if (!user) {
+      const redirectUrl = new URL('/login', request.url)
+      redirectUrl.searchParams.set('redirect', url.pathname)
+      return NextResponse.redirect(redirectUrl)
     }
   }
 
-  // Redirect logged in users away from auth pages
   if (url.pathname === '/login' || url.pathname === '/signup') {
-    if (session) {
+    if (user) {
       return NextResponse.redirect(new URL('/dashboard', request.url))
     }
   }
 
-  return res
+  return supabaseResponse
 }
 
 export const config = {
-  matcher: ['/dashboard/:path*', '/login', '/signup'],
+  matcher: ['/dashboard/:path*', '/settings/:path*', '/login', '/signup'],
 }

@@ -12,10 +12,12 @@ import {
   PlayCircle,
   User,
   LogOut,
-  Loader2
+  Loader2,
+  BarChart3,
+  Users,
 } from "lucide-react"
 
-import { supabase } from "@/lib/supabase"
+import { createClient } from "@/lib/supabase/client"
 import {
   Sidebar,
   SidebarContent,
@@ -32,6 +34,7 @@ import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
+  DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
@@ -39,6 +42,7 @@ import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
 export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
   const pathname = usePathname()
   const router = useRouter()
+  const supabase = createClient()
   const [userData, setUserData] = React.useState<{ name?: string; email?: string; avatar?: string } | null>(null)
   const [loading, setLoading] = React.useState(true)
 
@@ -46,16 +50,22 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
     const getUser = async () => {
       const { data: { user } } = await supabase.auth.getUser()
       if (user) {
+        const { data: profile } = await supabase
+          .from('profiles')
+          .select('full_name, avatar_url')
+          .eq('id', user.id)
+          .single()
+
         setUserData({
-          name: user.user_metadata?.full_name || user.email?.split("@")[0],
+          name: profile?.full_name || user.user_metadata?.full_name || user.email?.split("@")[0],
           email: user.email,
-          avatar: user.user_metadata?.avatar_url,
+          avatar: profile?.avatar_url || user.user_metadata?.avatar_url,
         })
       }
       setLoading(false)
     }
     getUser()
-  }, [])
+  }, [supabase])
 
   const handleLogout = async () => {
     await supabase.auth.signOut()
@@ -76,14 +86,26 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
       icon: PlusCircle,
       isActive: pathname === "/dashboard/new",
     },
+    {
+      title: "Analytics",
+      url: "/dashboard/analytics",
+      icon: BarChart3,
+      isActive: pathname === "/dashboard/analytics",
+    },
   ]
 
   const secondary = [
     {
+      title: "Team",
+      url: "/settings/team",
+      icon: Users,
+      isActive: pathname === "/settings/team",
+    },
+    {
       title: "Settings",
-      url: "/dashboard/settings",
+      url: "/settings",
       icon: Settings,
-      isActive: pathname === "/dashboard/settings",
+      isActive: pathname.startsWith("/settings"),
     },
     {
       title: "Support",
@@ -181,10 +203,19 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
                 align="end"
                 sideOffset={4}
               >
-                <DropdownMenuItem>
-                  <User className="mr-2 h-4 w-4" />
-                  Profile
+                <DropdownMenuItem asChild>
+                  <Link href="/settings">
+                    <User className="mr-2 h-4 w-4" />
+                    Profile
+                  </Link>
                 </DropdownMenuItem>
+                <DropdownMenuItem asChild>
+                  <Link href="/settings/team">
+                    <Users className="mr-2 h-4 w-4" />
+                    Team
+                  </Link>
+                </DropdownMenuItem>
+                <DropdownMenuSeparator />
                 <DropdownMenuItem onClick={handleLogout}>
                   <LogOut className="mr-2 h-4 w-4" />
                   Log out
