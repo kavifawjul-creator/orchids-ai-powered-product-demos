@@ -58,10 +58,10 @@ const Nav = () => {
         </div>
 
         <div className="hidden md:flex items-center gap-4">
-          <Link href="/dashboard">
+          <Link href="/login">
             <Button variant="ghost" size="sm">Sign In</Button>
           </Link>
-          <Link href="/dashboard">
+          <Link href="/signup">
             <Button size="sm" className="rounded-full px-6 shadow-lg shadow-primary/20">
               Get Started
             </Button>
@@ -95,8 +95,12 @@ const Nav = () => {
           ))}
           <hr className="my-2" />
           <div className="flex flex-col gap-3">
-            <Button variant="outline" fullWidth>Sign In</Button>
-            <Button fullWidth>Get Started</Button>
+            <Button variant="outline" asChild>
+              <Link href="/login">Sign In</Link>
+            </Button>
+            <Button asChild>
+              <Link href="/signup">Get Started</Link>
+            </Button>
           </div>
         </motion.div>
       )}
@@ -343,7 +347,7 @@ export default function LandingPage() {
                 Join 500+ engineering teams saving 20+ hours a month on video production.
               </p>
               <div className="flex flex-col sm:flex-row items-center justify-center gap-4">
-                <Link href="/dashboard">
+                <Link href="/signup">
                   <Button size="xl" variant="secondary" className="rounded-full px-10 h-14 text-lg font-bold shadow-xl">
                     Get Started for Free
                   </Button>
