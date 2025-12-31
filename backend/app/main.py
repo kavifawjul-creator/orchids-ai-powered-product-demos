@@ -98,6 +98,12 @@ async def lifespan(app: FastAPI):
     except Exception as e:
         logger.warning(f"Event bus connection failed: {e}")
     
+    try:
+        from .services.sandbox.service import sandbox_service
+        await sandbox_service.startup_recovery()
+    except Exception as e:
+        logger.warning(f"Sandbox recovery failed: {e}")
+    
     yield
     
     await graceful_shutdown()

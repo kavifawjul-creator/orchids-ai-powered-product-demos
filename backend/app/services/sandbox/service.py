@@ -11,7 +11,10 @@ except ImportError:
     DaytonaConfig = None
     CreateSandboxParams = None
 
+from supabase import Client
+
 from app.core.config import settings
+from app.core.database import get_supabase
 from app.models.sandbox import (
     SandboxInfo,
     SandboxStatus,
@@ -143,6 +146,42 @@ class DaytonaSandboxService:
         self._daytona: Optional[Daytona] = None
         self._sandboxes: Dict[str, SandboxInfo] = {}
         self._event_callbacks: List[Callable] = []
+        self._supabase: Optional[Client] = None
+
+    @property
+    def supabase(self) -> Client:
+        if self._supabase is None:
+            self._supabase = get_supabase()
+        return self._supabase
+
+    async def _persist_sandbox_to_db(self, sandbox_info: SandboxInfo):
+        if not sandbox_info.project_id:
+            return
+        try:
+            self.supabase.table("projects").update({
+                "sandbox_id": sandbox_info.id,
+                "daytona_sandbox_id": sandbox_info.daytona_sandbox_id,
+                "sandbox_status": sandbox_info.status.value,
+                "sandbox_preview_url": sandbox_info.preview_url,
+                "sandbox_created_at": sandbox_info.created_at.isoformat() if sandbox_info.created_at else None,
+                "updated_at": datetime.utcnow().isoformat(),
+            }).eq("id", sandbox_info.project_id).execute()
+            logger.info(f"Persisted sandbox {sandbox_info.id} to DB for project {sandbox_info.project_id}")
+        except Exception as e:
+            logger.error(f"Failed to persist sandbox to DB: {e}")
+
+    async def _clear_sandbox_from_db(self, project_id: str):
+        try:
+            self.supabase.table("projects").update({
+                "sandbox_id": None,
+                "daytona_sandbox_id": None,
+                "sandbox_status": "terminated",
+                "sandbox_preview_url": None,
+                "updated_at": datetime.utcnow().isoformat(),
+            }).eq("id", project_id).execute()
+            logger.info(f"Cleared sandbox from DB for project {project_id}")
+        except Exception as e:
+            logger.error(f"Failed to clear sandbox from DB: {e}")
 
     @property
     def daytona(self):
@@ -177,6 +216,7 @@ class DaytonaSandboxService:
             status=SandboxStatus.CREATING,
         )
         self._sandboxes[sandbox_info.id] = sandbox_info
+        await self._persist_sandbox_to_db(sandbox_info)
 
         try:
             await self._emit_event("SANDBOX_CREATING", {"sandbox_id": sandbox_info.id})
@@ -185,6 +225,7 @@ class DaytonaSandboxService:
             if self.daytona is None or CreateSandboxParams is None:
                 sandbox_info.status = SandboxStatus.ERROR
                 sandbox_info.error_message = "Daytona SDK not available"
+                await self._persist_sandbox_to_db(sandbox_info)
                 return SandboxResponse(
                     success=False,
                     sandbox=sandbox_info,
@@ -199,6 +240,7 @@ class DaytonaSandboxService:
             sandbox = self.daytona.create(params)
             sandbox_info.daytona_sandbox_id = sandbox.id
             sandbox_info.logs.append(f"[{datetime.utcnow().isoformat()}] Sandbox created: {sandbox.id}")
+            await self._persist_sandbox_to_db(sandbox_info)
 
             if request.git_url:
                 sandbox_info.status = SandboxStatus.CLONING
@@ -254,6 +296,7 @@ class DaytonaSandboxService:
             sandbox_info.status = SandboxStatus.READY
             sandbox_info.updated_at = datetime.utcnow()
             sandbox_info.logs.append(f"[{datetime.utcnow().isoformat()}] Preview URL: {preview_link}")
+            await self._persist_sandbox_to_db(sandbox_info)
 
             await self._emit_event("SANDBOX_READY", {
                 "sandbox_id": sandbox_info.id,
@@ -271,6 +314,7 @@ class DaytonaSandboxService:
             sandbox_info.status = SandboxStatus.ERROR
             sandbox_info.error_message = str(e)
             sandbox_info.logs.append(f"[{datetime.utcnow().isoformat()}] ERROR: {str(e)}")
+            await self._persist_sandbox_to_db(sandbox_info)
             await self._emit_event("SANDBOX_ERROR", {"sandbox_id": sandbox_info.id, "error": str(e)})
 
             return SandboxResponse(
@@ -409,6 +453,7 @@ class DaytonaSandboxService:
 
             sandbox_info.status = SandboxStatus.STOPPED
             sandbox_info.updated_at = datetime.utcnow()
+            await self._persist_sandbox_to_db(sandbox_info)
             await self._emit_event("SANDBOX_STOPPED", {"sandbox_id": sandbox_id})
             return True
         except Exception as e:
@@ -424,6 +469,8 @@ class DaytonaSandboxService:
             self.daytona.remove(sandbox_info.daytona_sandbox_id)
             sandbox_info.status = SandboxStatus.TERMINATED
             sandbox_info.updated_at = datetime.utcnow()
+            if sandbox_info.project_id:
+                await self._clear_sandbox_from_db(sandbox_info.project_id)
             await self._emit_event("SANDBOX_TERMINATED", {"sandbox_id": sandbox_id})
             return True
         except Exception as e:
@@ -495,6 +542,95 @@ class DaytonaSandboxService:
         if not sandbox_info:
             return []
         return sandbox_info.logs
+
+    async def recover_sandboxes_from_db(self) -> int:
+        recovered = 0
+        try:
+            result = self.supabase.table("projects").select(
+                "id, sandbox_id, daytona_sandbox_id, sandbox_status, sandbox_preview_url, sandbox_created_at"
+            ).in_("sandbox_status", ["running", "ready", "creating", "installing", "cloning"]).execute()
+
+            if not result.data:
+                logger.info("No active sandboxes to recover from DB")
+                return 0
+
+            for row in result.data:
+                daytona_id = row.get("daytona_sandbox_id")
+                if not daytona_id:
+                    continue
+
+                sandbox_exists = False
+                if self.daytona:
+                    try:
+                        self.daytona.get_current_sandbox(daytona_id)
+                        sandbox_exists = True
+                    except Exception:
+                        sandbox_exists = False
+
+                if sandbox_exists:
+                    sandbox_info = SandboxInfo(
+                        id=row.get("sandbox_id", daytona_id),
+                        project_id=row["id"],
+                        daytona_sandbox_id=daytona_id,
+                        status=SandboxStatus(row.get("sandbox_status", "ready")),
+                        preview_url=row.get("sandbox_preview_url"),
+                    )
+                    if row.get("sandbox_created_at"):
+                        try:
+                            sandbox_info.created_at = datetime.fromisoformat(row["sandbox_created_at"].replace("Z", "+00:00"))
+                        except Exception:
+                            pass
+
+                    self._sandboxes[sandbox_info.id] = sandbox_info
+                    recovered += 1
+                    logger.info(f"Recovered sandbox {sandbox_info.id} for project {row['id']}")
+                else:
+                    await self._clear_sandbox_from_db(row["id"])
+                    logger.info(f"Cleared stale sandbox record for project {row['id']} - Daytona sandbox no longer exists")
+
+            logger.info(f"Sandbox recovery complete: {recovered} sandboxes recovered")
+        except Exception as e:
+            logger.error(f"Failed to recover sandboxes from DB: {e}")
+
+        return recovered
+
+    async def cleanup_orphaned_sandboxes(self) -> int:
+        cleaned = 0
+        if not self.daytona:
+            return 0
+
+        try:
+            db_sandbox_ids = set()
+            result = self.supabase.table("projects").select("daytona_sandbox_id").not_.is_("daytona_sandbox_id", "null").execute()
+            if result.data:
+                db_sandbox_ids = {row["daytona_sandbox_id"] for row in result.data if row.get("daytona_sandbox_id")}
+
+            try:
+                daytona_sandboxes = self.daytona.list()
+            except Exception as e:
+                logger.warning(f"Could not list Daytona sandboxes: {e}")
+                return 0
+
+            for sandbox in daytona_sandboxes:
+                if sandbox.id not in db_sandbox_ids:
+                    try:
+                        self.daytona.remove(sandbox.id)
+                        cleaned += 1
+                        logger.info(f"Cleaned orphaned Daytona sandbox: {sandbox.id}")
+                    except Exception as e:
+                        logger.warning(f"Failed to remove orphaned sandbox {sandbox.id}: {e}")
+
+            logger.info(f"Orphaned sandbox cleanup complete: {cleaned} sandboxes removed")
+        except Exception as e:
+            logger.error(f"Failed to cleanup orphaned sandboxes: {e}")
+
+        return cleaned
+
+    async def startup_recovery(self):
+        logger.info("Starting sandbox recovery on server startup...")
+        recovered = await self.recover_sandboxes_from_db()
+        orphaned = await self.cleanup_orphaned_sandboxes()
+        logger.info(f"Startup recovery complete: {recovered} recovered, {orphaned} orphaned cleaned")
 
 
 sandbox_service = DaytonaSandboxService()
