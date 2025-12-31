@@ -22,6 +22,8 @@ def generate_demo_task(demo_id: str, repo_url: str, prompt: str, title: str):
 
 async def _run_generation_pipeline(demo_id: str, repo_url: str, prompt: str, title: str):
     supabase = get_supabase()
+    project = None
+    sandbox = None
     
     try:
         supabase.table("demos").update({"status": "building"}).eq("id", demo_id).execute()
@@ -114,6 +116,12 @@ async def _run_generation_pipeline(demo_id: str, repo_url: str, prompt: str, tit
             "updated_at": datetime.utcnow().isoformat()
         }).eq("id", demo_id).execute()
         
+        if sandbox:
+            try:
+                await sandbox_service.terminate_sandbox(sandbox.id)
+            except Exception as cleanup_error:
+                print(f"Failed to cleanup sandbox after success: {cleanup_error}")
+        
         return {"status": "success", "demo_id": demo_id, "video_url": final_video_path}
         
     except Exception as e:
@@ -123,4 +131,17 @@ async def _run_generation_pipeline(demo_id: str, repo_url: str, prompt: str, tit
             "description": f"Error: {str(e)}",
             "updated_at": datetime.utcnow().isoformat()
         }).eq("id", demo_id).execute()
+        
+        if sandbox:
+            try:
+                await sandbox_service.terminate_sandbox(sandbox.id)
+            except Exception as cleanup_error:
+                print(f"Failed to terminate sandbox on error: {cleanup_error}")
+        
+        if project:
+            try:
+                await sandbox_service.cleanup_failed_sandboxes(project.id)
+            except Exception as cleanup_error:
+                print(f"Failed to cleanup failed sandboxes: {cleanup_error}")
+        
         return {"status": "error", "error": str(e)}

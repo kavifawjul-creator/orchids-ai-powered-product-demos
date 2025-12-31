@@ -444,6 +444,49 @@ class DaytonaSandboxService:
 
         return cleaned
 
+    async def cleanup_failed_sandboxes(self, project_id: Optional[str] = None) -> int:
+        cleaned = 0
+        error_statuses = [SandboxStatus.ERROR, SandboxStatus.CREATING]
+        now = datetime.utcnow()
+        max_error_age_seconds = 300
+
+        for sandbox_id, sandbox_info in list(self._sandboxes.items()):
+            if project_id and sandbox_info.project_id != project_id:
+                continue
+                
+            should_cleanup = False
+            
+            if sandbox_info.status == SandboxStatus.ERROR:
+                should_cleanup = True
+            elif sandbox_info.status == SandboxStatus.CREATING:
+                elapsed = (now - sandbox_info.created_at).total_seconds()
+                if elapsed > max_error_age_seconds:
+                    should_cleanup = True
+            
+            if should_cleanup:
+                try:
+                    if sandbox_info.daytona_sandbox_id and self.daytona:
+                        try:
+                            self.daytona.remove(sandbox_info.daytona_sandbox_id)
+                        except Exception as e:
+                            logger.warning(f"Failed to remove Daytona sandbox {sandbox_info.daytona_sandbox_id}: {e}")
+                    
+                    sandbox_info.status = SandboxStatus.TERMINATED
+                    sandbox_info.updated_at = datetime.utcnow()
+                    del self._sandboxes[sandbox_id]
+                    cleaned += 1
+                    logger.info(f"Cleaned up failed sandbox: {sandbox_id} (status was: {sandbox_info.status})")
+                    await self._emit_event("SANDBOX_CLEANUP", {"sandbox_id": sandbox_id, "reason": "error"})
+                except Exception as e:
+                    logger.error(f"Error during cleanup of sandbox {sandbox_id}: {e}")
+
+        return cleaned
+
+    async def cleanup_all_sandboxes(self) -> int:
+        cleaned_expired = await self.cleanup_expired_sandboxes()
+        cleaned_failed = await self.cleanup_failed_sandboxes()
+        return cleaned_expired + cleaned_failed
+
     async def get_all_sandboxes(self) -> List[SandboxInfo]:
         return list(self._sandboxes.values())
 

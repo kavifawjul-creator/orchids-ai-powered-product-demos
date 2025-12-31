@@ -27,6 +27,9 @@ class Settings(BaseSettings):
     S3_REGION: str = "us-west-2"
     S3_ENDPOINT_URL: Optional[str] = None
     
+    TTS_VOICE: str = "alloy"
+    TTS_MODEL: str = "tts-1"
+    
     SANDBOX_TIMEOUT_MINUTES: int = 30
     MAX_STEPS_PER_SESSION: int = 100
     MAX_BROWSER_TIME_MINUTES: int = 15
