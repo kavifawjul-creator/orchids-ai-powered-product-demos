@@ -1,4 +1,6 @@
+import os
 from pydantic_settings import BaseSettings
+from pydantic import field_validator
 from functools import lru_cache
 from typing import Optional
 
@@ -7,12 +9,12 @@ class Settings(BaseSettings):
     DEBUG: bool = True
     API_V1_PREFIX: str = "/api/v1"
     
-    DATABASE_URL: str
-    SUPABASE_URL: str
-    SUPABASE_ANON_KEY: str
-    SUPABASE_SERVICE_ROLE_KEY: str
+    DATABASE_URL: Optional[str] = None
+    SUPABASE_URL: Optional[str] = None
+    SUPABASE_ANON_KEY: Optional[str] = None
+    SUPABASE_SERVICE_ROLE_KEY: Optional[str] = None
     
-    REDIS_URL: str = "redis://localhost:6379"
+    REDIS_URL: Optional[str] = None
     
     OPENAI_API_KEY: Optional[str] = None
     ANTHROPIC_API_KEY: Optional[str] = None
@@ -34,19 +36,30 @@ class Settings(BaseSettings):
     MAX_STEPS_PER_SESSION: int = 100
     MAX_BROWSER_TIME_MINUTES: int = 15
     
+    @field_validator('SUPABASE_URL', mode='before')
+    @classmethod
+    def get_supabase_url(cls, v):
+        return v or os.getenv('NEXT_PUBLIC_SUPABASE_URL')
+    
+    @field_validator('SUPABASE_ANON_KEY', mode='before')
+    @classmethod
+    def get_supabase_anon_key(cls, v):
+        return v or os.getenv('NEXT_PUBLIC_SUPABASE_ANON_KEY')
+    
+    @field_validator('DATABASE_URL', mode='before')
+    @classmethod
+    def get_database_url(cls, v):
+        return v or os.getenv('DATABASE_URL')
+    
+    @field_validator('SUPABASE_SERVICE_ROLE_KEY', mode='before')
+    @classmethod
+    def get_supabase_service_role_key(cls, v):
+        return v or os.getenv('SUPABASE_SERVICE_ROLE_KEY')
+
     class Config:
         env_file = ".env"
-        case_sensitive = True
+        case_sensitive = False
         extra = "ignore"
-
-    def __init__(self, **values):
-        import os
-        # Fallback for Supabase keys if prefixed ones exist
-        if not values.get("SUPABASE_URL"):
-            values["SUPABASE_URL"] = os.getenv("NEXT_PUBLIC_SUPABASE_URL")
-        if not values.get("SUPABASE_ANON_KEY"):
-            values["SUPABASE_ANON_KEY"] = os.getenv("NEXT_PUBLIC_SUPABASE_ANON_KEY")
-        super().__init__(**values)
 
 @lru_cache()
 def get_settings() -> Settings:

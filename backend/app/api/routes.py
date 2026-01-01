@@ -215,6 +215,7 @@ async def extend_sandbox(sandbox_id: str, minutes: int = 30):
 @router.post("/demos/generate")
 async def generate_demo(request: GenerateDemoRequest, background_tasks: BackgroundTasks, req: Request):
     from ..core.database import get_supabase
+    from ..core.config import settings
     
     supabase = get_supabase()
     
@@ -241,16 +242,26 @@ async def generate_demo(request: GenerateDemoRequest, background_tasks: Backgrou
     }
     supabase.table("demos").insert(demo_data).execute()
     
-    try:
-        generate_demo_task.delay(
-            demo_id=demo_id,
-            repo_url=request.repo_url,
-            prompt=request.prompt,
-            title=title
-        )
-    except Exception as e:
-        print(f"Failed to enqueue celery task: {e}. Falling back to background task.")
-        from ..workers.tasks import _run_generation_pipeline
+    from ..workers.tasks import _run_generation_pipeline
+    
+    if settings.REDIS_URL:
+        try:
+            generate_demo_task.delay(
+                demo_id=demo_id,
+                repo_url=request.repo_url,
+                prompt=request.prompt,
+                title=title
+            )
+        except Exception as e:
+            print(f"Celery task failed: {e}. Falling back to background task.")
+            background_tasks.add_task(
+                _run_generation_pipeline,
+                demo_id,
+                request.repo_url,
+                request.prompt,
+                title
+            )
+    else:
         background_tasks.add_task(
             _run_generation_pipeline,
             demo_id,
