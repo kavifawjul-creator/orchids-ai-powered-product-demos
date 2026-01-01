@@ -4,12 +4,49 @@ import json
 from typing import Optional, Dict, Any, List, Callable
 from datetime import datetime
 
+_sdk_import_logger = logging.getLogger(__name__)
+
+Daytona = None
+DaytonaConfig = None
+CreateSandboxParams = None
+CreateSandboxBaseParams = None
+
 try:
-    from daytona import Daytona, DaytonaConfig, CreateSandboxParams
-except ImportError:
-    Daytona = None
-    DaytonaConfig = None
-    CreateSandboxParams = None
+    from daytona_sdk import Daytona as _Daytona, DaytonaConfig as _DaytonaConfig
+    Daytona = _Daytona
+    DaytonaConfig = _DaytonaConfig
+    _sdk_import_logger.info("Successfully imported Daytona SDK from daytona_sdk")
+    try:
+        from daytona_sdk import CreateSandboxParams as _CSP
+        CreateSandboxParams = _CSP
+        CreateSandboxBaseParams = _CSP
+    except ImportError:
+        try:
+            from daytona_sdk import CreateSandboxBaseParams as _CSBP
+            CreateSandboxParams = _CSBP
+            CreateSandboxBaseParams = _CSBP
+        except ImportError:
+            _sdk_import_logger.warning("CreateSandboxParams/CreateSandboxBaseParams not found in daytona_sdk")
+except ImportError as e:
+    _sdk_import_logger.warning(f"Failed to import from daytona_sdk: {e}")
+    try:
+        from daytona import Daytona as _Daytona, DaytonaConfig as _DaytonaConfig
+        Daytona = _Daytona
+        DaytonaConfig = _DaytonaConfig
+        _sdk_import_logger.info("Successfully imported Daytona SDK from daytona")
+        try:
+            from daytona import CreateSandboxParams as _CSP
+            CreateSandboxParams = _CSP
+            CreateSandboxBaseParams = _CSP
+        except ImportError:
+            try:
+                from daytona import CreateSandboxBaseParams as _CSBP
+                CreateSandboxParams = _CSBP
+                CreateSandboxBaseParams = _CSBP
+            except ImportError:
+                _sdk_import_logger.warning("CreateSandboxParams/CreateSandboxBaseParams not found in daytona")
+    except ImportError as e2:
+        _sdk_import_logger.warning(f"Failed to import from daytona: {e2}")
 
 from supabase import Client
 
