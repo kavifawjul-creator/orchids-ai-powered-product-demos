@@ -108,8 +108,9 @@ export default function DashboardPage() {
         
         const { count: viewsCount } = await supabase
           .from('analytics')
-          .select('*', { count: 'exact', head: true })
+          .select('id', { count: 'exact' })
           .eq('event_type', 'view')
+          .limit(0)
 
         setStats({
           views: viewsCount || 0,

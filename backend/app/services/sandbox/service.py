@@ -649,13 +649,23 @@ class DaytonaSandboxService:
                 return 0
 
             for sandbox in daytona_sandboxes:
-                if sandbox.id not in db_sandbox_ids:
+                # Daytona SDK might return objects, dictionaries or tuples depending on version
+                sandbox_id = getattr(sandbox, "id", None)
+                if sandbox_id is None and isinstance(sandbox, dict):
+                    sandbox_id = sandbox.get("id")
+                elif sandbox_id is None and isinstance(sandbox, (list, tuple)) and len(sandbox) > 0:
+                    # If it's a tuple, we might need to know which index is the ID. 
+                    # Usually, if it's a tuple from a list call, the first element might be the object or the ID.
+                    # However, most SDKs return objects. If it's a tuple, it might be (id, name, ...)
+                    sandbox_id = sandbox[0]
+                
+                if sandbox_id and sandbox_id not in db_sandbox_ids:
                     try:
-                        self.daytona.remove(sandbox.id)
+                        self.daytona.remove(sandbox_id)
                         cleaned += 1
-                        logger.info(f"Cleaned orphaned Daytona sandbox: {sandbox.id}")
+                        logger.info(f"Cleaned orphaned Daytona sandbox: {sandbox_id}")
                     except Exception as e:
-                        logger.warning(f"Failed to remove orphaned sandbox {sandbox.id}: {e}")
+                        logger.warning(f"Failed to remove orphaned sandbox {sandbox_id}: {e}")
 
             logger.info(f"Orphaned sandbox cleanup complete: {cleaned} sandboxes removed")
         except Exception as e:
