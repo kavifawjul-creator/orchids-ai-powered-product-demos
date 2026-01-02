@@ -26,7 +26,7 @@ import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import { Card } from "@/components/ui/card"
 import Link from "next/link"
-import { supabase } from "@/lib/supabase"
+import { createClient } from "@/lib/supabase/client"
 
 export default function SharePage() {
   const { id } = useParams()
@@ -38,6 +38,7 @@ export default function SharePage() {
   const [progress, setProgress] = useState(0)
   const [isMuted, setIsMuted] = useState(false)
   const videoRef = useRef<HTMLVideoElement>(null)
+  const supabase = createClient()
 
   useEffect(() => {
     async function fetchData() {

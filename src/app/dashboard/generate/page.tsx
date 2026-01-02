@@ -19,7 +19,7 @@ import { Button } from "@/components/ui/button"
 import { Card } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { Progress } from "@/components/ui/progress"
-import { supabase } from "@/lib/supabase"
+import { createClient } from "@/lib/supabase/client"
 
 interface AgentLog {
   type: "reasoning" | "action" | "milestone" | "error" | "verification"
@@ -52,6 +52,7 @@ function GeneratePageContent() {
   const repo = searchParams.get("repo") || ""
   const prompt = searchParams.get("prompt") || ""
   const demoIdParam = searchParams.get("demo_id")
+  const supabase = createClient()
 
   const [logs, setLogs] = React.useState<AgentLog[]>([])
   const [progress, setProgress] = React.useState(0)

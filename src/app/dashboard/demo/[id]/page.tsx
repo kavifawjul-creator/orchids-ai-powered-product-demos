@@ -46,7 +46,7 @@ import {
   DialogFooter
 } from "@/components/ui/dialog"
 import { Switch } from "@/components/ui/switch"
-import { supabase } from "@/lib/supabase"
+import { createClient } from "@/lib/supabase/client"
 
 export default function DemoDetailPage() {
   const { id } = useParams()
@@ -59,6 +59,7 @@ export default function DemoDetailPage() {
   const [playbackProgress, setPlaybackProgress] = useState(0)
   const [isMagicGenerating, setIsMagicGenerating] = useState(false)
   const [brandColor, setBrandColor] = useState("#7c3aed")
+  const supabase = createClient()
 
   useEffect(() => {
     async function fetchData() {
