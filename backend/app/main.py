@@ -17,6 +17,7 @@ from slowapi.util import get_remote_address
 from slowapi.errors import RateLimitExceeded
 from .core.config import settings
 from .core.events import event_bus
+from .core.auth import get_current_user, verify_supabase_token
 from .api.routes import router
 from .api.websocket import websocket_endpoint
 
@@ -160,12 +161,19 @@ async def auth_middleware(request: Request, call_next):
     if not any(path.startswith(prefix) for prefix in protected_prefixes) or path in public_paths:
         return await call_next(request)
     
-    if settings.API_SECRET_KEY:
-        api_key = request.headers.get("X-API-Key")
-        if api_key != settings.API_SECRET_KEY:
-            return JSONResponse(status_code=401, content={"detail": "Invalid or missing API key"})
+    auth_header = request.headers.get("Authorization")
+    api_key = request.headers.get("X-API-Key")
     
-    return await call_next(request)
+    if settings.API_SECRET_KEY and api_key == settings.API_SECRET_KEY:
+        return await call_next(request)
+    
+    if auth_header:
+        user = await verify_supabase_token(auth_header)
+        if user:
+            request.state.user = user
+            return await call_next(request)
+    
+    return JSONResponse(status_code=401, content={"detail": "Authentication required"})
 
 @app.middleware("http")
 async def logging_and_metrics_middleware(request: Request, call_next):

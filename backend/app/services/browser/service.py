@@ -484,6 +484,12 @@ class MCPBrowserService:
             return None
         return await page.screenshot(full_page=full_page)
 
+    async def get_screenshot(self, session_id: str, full_page: bool = False) -> Optional[str]:
+        screenshot_bytes = await self.take_screenshot(session_id, full_page)
+        if screenshot_bytes:
+            return base64.b64encode(screenshot_bytes).decode()
+        return None
+
     async def get_page_info(self, session_id: str) -> Optional[PageInfo]:
         page = await self.get_page(session_id)
         if not page:
