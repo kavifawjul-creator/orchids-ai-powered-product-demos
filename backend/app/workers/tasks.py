@@ -110,9 +110,17 @@ async def _run_generation_pipeline(demo_id: str, repo_url: str, prompt: str, tit
         
         final_video_path = await export_service.export_demo(demo_id)
         
+        thumbnail_url = None
+        try:
+            from ..services.storage.service import storage_service
+            thumbnail_url = await storage_service.extract_thumbnail(final_video_path, demo_id)
+        except Exception as thumb_error:
+            print(f"Failed to extract thumbnail: {thumb_error}")
+        
         supabase.table("demos").update({
             "status": "completed",
             "video_url": final_video_path,
+            "thumbnail_url": thumbnail_url,
             "updated_at": datetime.utcnow().isoformat()
         }).eq("id", demo_id).execute()
         

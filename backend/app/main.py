@@ -3,12 +3,14 @@ import time
 import signal
 import asyncio
 import logging
+import secrets
 from datetime import datetime
 from typing import Dict, Any
 from collections import defaultdict
-from fastapi import FastAPI, WebSocket, Request
+from fastapi import FastAPI, WebSocket, Request, HTTPException, Depends
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
+from fastapi.security import APIKeyHeader
 from contextlib import asynccontextmanager
 from slowapi import Limiter, _rate_limit_exceeded_handler
 from slowapi.util import get_remote_address
@@ -72,6 +74,13 @@ class MetricsCollector:
         }
 
 metrics = MetricsCollector()
+
+api_key_header = APIKeyHeader(name="X-API-Key", auto_error=False)
+
+async def verify_api_key(api_key: str = Depends(api_key_header)):
+    if settings.API_SECRET_KEY and api_key != settings.API_SECRET_KEY:
+        raise HTTPException(status_code=401, detail="Invalid API key")
+    return api_key
 
 shutdown_event = asyncio.Event()
 
@@ -140,6 +149,23 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+@app.middleware("http")
+async def auth_middleware(request: Request, call_next):
+    protected_prefixes = ["/api/v1/demos", "/api/v1/projects", "/api/v1/sessions", "/api/v1/sandboxes"]
+    public_paths = ["/", "/health", "/metrics", "/docs", "/openapi.json", "/redoc"]
+    
+    path = request.url.path
+    
+    if not any(path.startswith(prefix) for prefix in protected_prefixes) or path in public_paths:
+        return await call_next(request)
+    
+    if settings.API_SECRET_KEY:
+        api_key = request.headers.get("X-API-Key")
+        if api_key != settings.API_SECRET_KEY:
+            return JSONResponse(status_code=401, content={"detail": "Invalid or missing API key"})
+    
+    return await call_next(request)
 
 @app.middleware("http")
 async def logging_and_metrics_middleware(request: Request, call_next):

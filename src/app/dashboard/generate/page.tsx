@@ -72,7 +72,15 @@ function GeneratePageContent() {
 
   React.useEffect(() => {
     if (!repo || !prompt) {
-      router.push("/dashboard/new")
+      if (!demoIdParam) {
+        router.push("/dashboard/new")
+        return
+      }
+    }
+
+    if (demoIdParam) {
+      addLog({ type: "reasoning", text: `Resuming generation for ${repo?.split('/').pop() || 'demo'}...`, timestamp: Date.now() })
+      setProgress(10)
       return
     }
 
@@ -108,7 +116,7 @@ function GeneratePageContent() {
     if (!demoId) {
       startGeneration()
     }
-  }, [repo, prompt, router, addLog, demoId])
+  }, [repo, prompt, router, addLog, demoId, demoIdParam])
 
   React.useEffect(() => {
     if (!demoId) return

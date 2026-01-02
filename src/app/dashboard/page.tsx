@@ -17,6 +17,7 @@ import {
   Trash2,
   Share2
 } from "lucide-react"
+import { useRouter } from "next/navigation"
 import Link from "next/link"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
@@ -53,9 +54,11 @@ import { useState, useEffect } from "react"
 import { createClient } from "@/lib/supabase/client"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
+import { toast } from "sonner"
 
 export default function DashboardPage() {
   const supabase = createClient()
+  const router = useRouter()
   const [demos, setDemos] = useState<any[]>([])
   const [loading, setLoading] = useState(true)
   const [stats, setStats] = useState({ views: 0, activeAgents: 0, avgTime: "14m" })
@@ -133,6 +136,7 @@ export default function DashboardPage() {
     if (settingsDemo?.id === demoId) {
       setSettingsDemo({ ...settingsDemo, is_public: isPublic })
     }
+    toast.success(isPublic ? "Demo is now public" : "Demo is now private")
   }
 
   const handleDeleteDemo = async () => {
@@ -140,6 +144,7 @@ export default function DashboardPage() {
     await supabase.from('demos').delete().eq('id', deleteDemo.id)
     setDemos(demos.filter(d => d.id !== deleteDemo.id))
     setDeleteDemo(null)
+    toast.success("Demo deleted successfully")
   }
 
   const handleCopyShareLink = () => {
@@ -147,6 +152,7 @@ export default function DashboardPage() {
     const shareUrl = `${window.location.origin}/share/${shareDemo.id}`
     navigator.clipboard.writeText(shareUrl)
     setCopied(true)
+    toast.success("Link copied to clipboard")
     setTimeout(() => setCopied(false), 2000)
   }
 
@@ -239,9 +245,9 @@ export default function DashboardPage() {
       <div>
         <div className="flex items-center justify-between mb-4">
           <h3 className="text-xl font-semibold tracking-tight">Recent Demos</h3>
-          <Button variant="ghost" size="sm" className="text-muted-foreground">
-            View all
-          </Button>
+            <Button variant="ghost" size="sm" className="text-muted-foreground" onClick={() => router.push('/dashboard/demos')}>
+              View all
+            </Button>
         </div>
           
           {loading ? (

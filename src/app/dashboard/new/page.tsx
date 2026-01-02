@@ -77,7 +77,7 @@ export default function NewDemoPage() {
         throw new Error(data.error || "Failed to start generation")
       }
 
-      router.push(`/dashboard/generate?id=${data.demo_id}`)
+      router.push(`/dashboard/generate?demo_id=${data.demo_id}&repo=${encodeURIComponent(repoUrl)}&prompt=${encodeURIComponent(prompt)}`)
     } catch (error) {
       console.error("Generation error:", error)
       setIsGenerating(false)

@@ -27,7 +27,8 @@ import {
   Check,
   Sparkles,
   Loader2,
-  MousePointer2
+  MousePointer2,
+  Video
 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent } from "@/components/ui/card"
@@ -247,7 +248,11 @@ export default function DemoDetailPage() {
             </DialogContent>
           </Dialog>
 
-          <Button className="gap-2">
+          <Button className="gap-2" onClick={() => {
+              if (demo?.video_url) {
+                window.open(demo.video_url, '_blank')
+              }
+            }}>
             <Download className="h-4 w-4" /> Export
           </Button>
         </div>

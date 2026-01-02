@@ -18,7 +18,12 @@ import {
   Cpu,
   MousePointer2,
   Menu,
-  X
+  X,
+  Check,
+  Star,
+  Building2,
+  Rocket,
+  Users
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -298,6 +303,257 @@ const HowItWorks = () => {
   );
 };
 
+const Solutions = () => {
+  const solutions = [
+    {
+      title: "For Startups",
+      description: "Ship faster with instant demo videos for your landing pages and investor pitches.",
+      icon: Rocket,
+      features: ["Quick setup", "Affordable pricing", "Growth-ready"]
+    },
+    {
+      title: "For Enterprise",
+      description: "Scale your product marketing with consistent, brand-compliant demo content.",
+      icon: Building2,
+      features: ["SSO & SAML", "Custom branding", "Dedicated support"]
+    },
+    {
+      title: "For Teams",
+      description: "Collaborate on demo creation with role-based access and shared libraries.",
+      icon: Users,
+      features: ["Team workspaces", "Version control", "Analytics"]
+    }
+  ];
+
+  return (
+    <section id="solutions" className="py-24 bg-muted/30">
+      <div className="container mx-auto px-6">
+        <div className="text-center mb-16">
+          <Badge className="mb-4">Solutions</Badge>
+          <h2 className="text-4xl font-bold mb-4">Built for every team size</h2>
+          <p className="text-muted-foreground max-w-2xl mx-auto text-lg">
+            Whether you're a solo founder or an enterprise team, AutoVidAI scales with your needs.
+          </p>
+        </div>
+
+        <div className="grid md:grid-cols-3 gap-8">
+          {solutions.map((solution, idx) => (
+            <motion.div
+              key={idx}
+              initial={{ opacity: 0, y: 20 }}
+              whileInView={{ opacity: 1, y: 0 }}
+              transition={{ delay: idx * 0.1 }}
+              viewport={{ once: true }}
+              className="p-8 rounded-2xl bg-card border hover:border-primary/40 transition-colors shadow-sm"
+            >
+              <div className="w-12 h-12 rounded-xl bg-primary/10 flex items-center justify-center text-primary mb-6">
+                <solution.icon size={24} />
+              </div>
+              <h3 className="text-xl font-bold mb-3">{solution.title}</h3>
+              <p className="text-muted-foreground mb-6">{solution.description}</p>
+              <ul className="space-y-2">
+                {solution.features.map((feature, i) => (
+                  <li key={i} className="flex items-center gap-2 text-sm">
+                    <Check size={16} className="text-primary" />
+                    {feature}
+                  </li>
+                ))}
+              </ul>
+            </motion.div>
+          ))}
+        </div>
+      </div>
+    </section>
+  );
+};
+
+const Pricing = () => {
+  const plans = [
+    {
+      name: "Starter",
+      price: "$0",
+      period: "forever",
+      description: "Perfect for trying out AutoVidAI",
+      features: [
+        "3 demo videos per month",
+        "720p video quality",
+        "Basic AI narration",
+        "AutoVidAI watermark",
+        "Community support"
+      ],
+      cta: "Get Started",
+      popular: false
+    },
+    {
+      name: "Pro",
+      price: "$49",
+      period: "/month",
+      description: "For growing teams and products",
+      features: [
+        "Unlimited demo videos",
+        "4K video quality",
+        "Premium AI voices",
+        "No watermark",
+        "Custom branding",
+        "Priority support",
+        "Analytics dashboard"
+      ],
+      cta: "Start Free Trial",
+      popular: true
+    },
+    {
+      name: "Enterprise",
+      price: "Custom",
+      period: "",
+      description: "For large teams with custom needs",
+      features: [
+        "Everything in Pro",
+        "SSO & SAML",
+        "Dedicated account manager",
+        "Custom integrations",
+        "SLA guarantee",
+        "On-premise option",
+        "Advanced security"
+      ],
+      cta: "Contact Sales",
+      popular: false
+    }
+  ];
+
+  return (
+    <section id="pricing" className="py-24">
+      <div className="container mx-auto px-6">
+        <div className="text-center mb-16">
+          <Badge className="mb-4">Pricing</Badge>
+          <h2 className="text-4xl font-bold mb-4">Simple, transparent pricing</h2>
+          <p className="text-muted-foreground max-w-2xl mx-auto text-lg">
+            Start free and scale as you grow. No hidden fees.
+          </p>
+        </div>
+
+        <div className="grid md:grid-cols-3 gap-8 max-w-5xl mx-auto">
+          {plans.map((plan, idx) => (
+            <motion.div
+              key={idx}
+              initial={{ opacity: 0, y: 20 }}
+              whileInView={{ opacity: 1, y: 0 }}
+              transition={{ delay: idx * 0.1 }}
+              viewport={{ once: true }}
+              className={`relative p-8 rounded-2xl border ${
+                plan.popular 
+                  ? "bg-primary text-primary-foreground border-primary shadow-2xl shadow-primary/20 scale-105" 
+                  : "bg-card"
+              }`}
+            >
+              {plan.popular && (
+                <div className="absolute -top-4 left-1/2 -translate-x-1/2">
+                  <Badge className="bg-yellow-500 text-yellow-950 shadow-lg">
+                    <Star size={12} className="fill-current mr-1" /> Most Popular
+                  </Badge>
+                </div>
+              )}
+              <div className="mb-6">
+                <h3 className="text-xl font-bold mb-2">{plan.name}</h3>
+                <div className="flex items-baseline gap-1">
+                  <span className="text-4xl font-bold">{plan.price}</span>
+                  <span className={plan.popular ? "text-primary-foreground/70" : "text-muted-foreground"}>
+                    {plan.period}
+                  </span>
+                </div>
+                <p className={`mt-2 text-sm ${plan.popular ? "text-primary-foreground/70" : "text-muted-foreground"}`}>
+                  {plan.description}
+                </p>
+              </div>
+              <ul className="space-y-3 mb-8">
+                {plan.features.map((feature, i) => (
+                  <li key={i} className="flex items-center gap-2 text-sm">
+                    <Check size={16} className={plan.popular ? "text-primary-foreground" : "text-primary"} />
+                    {feature}
+                  </li>
+                ))}
+              </ul>
+              <Link href="/signup">
+                <Button 
+                  className="w-full rounded-full" 
+                  variant={plan.popular ? "secondary" : "default"}
+                  size="lg"
+                >
+                  {plan.cta}
+                </Button>
+              </Link>
+            </motion.div>
+          ))}
+        </div>
+      </div>
+    </section>
+  );
+};
+
+const Testimonials = () => {
+  const testimonials = [
+    {
+      quote: "AutoVidAI cut our demo creation time from days to minutes. Our sales team loves it.",
+      author: "Sarah Chen",
+      role: "Head of Product, TechFlow",
+      avatar: "https://images.unsplash.com/photo-1494790108377-be9c29b29330?w=100&h=100&fit=crop"
+    },
+    {
+      quote: "The AI narration is incredibly natural. Our customers can't tell it's AI-generated.",
+      author: "Marcus Johnson",
+      role: "VP Marketing, DataSync",
+      avatar: "https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=100&h=100&fit=crop"
+    },
+    {
+      quote: "We've shipped 10x more demo content since switching to AutoVidAI. Game changer.",
+      author: "Emily Rodriguez",
+      role: "Founder, CloudBase",
+      avatar: "https://images.unsplash.com/photo-1438761681033-6461ffad8d80?w=100&h=100&fit=crop"
+    }
+  ];
+
+  return (
+    <section className="py-24 bg-muted/30">
+      <div className="container mx-auto px-6">
+        <div className="text-center mb-16">
+          <Badge className="mb-4">Testimonials</Badge>
+          <h2 className="text-4xl font-bold mb-4">Loved by product teams</h2>
+        </div>
+
+        <div className="grid md:grid-cols-3 gap-8">
+          {testimonials.map((testimonial, idx) => (
+            <motion.div
+              key={idx}
+              initial={{ opacity: 0, y: 20 }}
+              whileInView={{ opacity: 1, y: 0 }}
+              transition={{ delay: idx * 0.1 }}
+              viewport={{ once: true }}
+              className="p-8 rounded-2xl bg-card border shadow-sm"
+            >
+              <div className="flex gap-1 mb-4">
+                {[...Array(5)].map((_, i) => (
+                  <Star key={i} size={16} className="fill-yellow-500 text-yellow-500" />
+                ))}
+              </div>
+              <p className="text-lg mb-6 leading-relaxed">"{testimonial.quote}"</p>
+              <div className="flex items-center gap-3">
+                <img 
+                  src={testimonial.avatar} 
+                  alt={testimonial.author}
+                  className="w-12 h-12 rounded-full object-cover"
+                />
+                <div>
+                  <p className="font-semibold">{testimonial.author}</p>
+                  <p className="text-sm text-muted-foreground">{testimonial.role}</p>
+                </div>
+              </div>
+            </motion.div>
+          ))}
+        </div>
+      </div>
+    </section>
+  );
+};
+
 const Footer = () => {
   return (
     <footer className="bg-background border-t py-12">
@@ -318,7 +574,7 @@ const Footer = () => {
           </div>
           
           <p className="text-sm text-muted-foreground">
-            © 2024 AutoVidAI. Built for developers.
+            © {new Date().getFullYear()} AutoVidAI. Built for developers.
           </p>
         </div>
       </div>
@@ -332,7 +588,10 @@ export default function LandingPage() {
       <Nav />
       <Hero />
       <Features />
+      <Solutions />
       <HowItWorks />
+      <Pricing />
+      <Testimonials />
       
       {/* CTA Section */}
       <section className="py-24">

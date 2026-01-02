@@ -49,6 +49,11 @@ export default function SharePage() {
         .single()
       
       if (demoData) {
+        if (!demoData.is_public) {
+          setDemo(null)
+          setLoading(false)
+          return
+        }
         setDemo(demoData)
         // Track view
         fetch("/api/analytics/track", {
@@ -465,7 +470,7 @@ export default function SharePage() {
             <a href="#" className="hover:text-white transition-colors">Twitter</a>
             <a href="#" className="hover:text-white transition-colors">GitHub</a>
           </div>
-          <p className="text-xs text-white/20 font-mono">© 2024 AUTOVID ENGINE v0.4.2</p>
+          <p className="text-xs text-white/20 font-mono">© {new Date().getFullYear()} AUTOVID ENGINE v0.4.2</p>
         </div>
       </footer>
     </div>

@@ -46,4 +46,40 @@ class StorageService:
         destination = f"{demo_id}/final.mp4"
         return await self.upload_file(file_path, destination, "video/mp4")
 
+    async def extract_thumbnail(self, video_url: str, demo_id: str) -> Optional[str]:
+        import subprocess
+        import tempfile
+        
+        try:
+            with tempfile.NamedTemporaryFile(suffix=".jpg", delete=False) as tmp:
+                thumb_path = tmp.name
+            
+            cmd = [
+                "ffmpeg", "-y",
+                "-i", video_url,
+                "-ss", "00:00:02",
+                "-vframes", "1",
+                "-vf", "scale=640:-1",
+                thumb_path
+            ]
+            
+            result = subprocess.run(cmd, capture_output=True, timeout=30)
+            
+            if result.returncode != 0 or not os.path.exists(thumb_path):
+                logger.warning(f"FFmpeg failed: {result.stderr.decode()}")
+                return None
+            
+            destination = f"{demo_id}/thumbnail.jpg"
+            url = await self.upload_file(thumb_path, destination, "image/jpeg")
+            
+            try:
+                os.unlink(thumb_path)
+            except:
+                pass
+            
+            return url
+        except Exception as e:
+            logger.error(f"Error extracting thumbnail: {e}")
+            return None
+
 storage_service = StorageService()
