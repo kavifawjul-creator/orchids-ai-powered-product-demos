@@ -4,16 +4,21 @@ import * as React from "react"
 import { useSearchParams, useRouter } from "next/navigation"
 import { Suspense } from "react"
 import { motion, AnimatePresence } from "framer-motion"
-import { 
-  Terminal, 
-  Cpu, 
-  MousePointer2, 
-  CheckCircle2, 
+import {
+  Terminal,
+  Cpu,
+  MousePointer2,
+  CheckCircle2,
   Loader2,
   Search,
   ArrowRight,
   AlertCircle,
-  Eye
+  Eye,
+  Maximize2,
+  Minimize2,
+  Wifi,
+  WifiOff,
+  Settings2
 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Card } from "@/components/ui/card"
@@ -65,6 +70,12 @@ function GeneratePageContent() {
   const [currentFeature, setCurrentFeature] = React.useState<string>("")
   const [stepProgress, setStepProgress] = React.useState({ current: 0, total: 0 })
   const [sessionId, setSessionId] = React.useState<string | null>(null)
+  const [streamQuality, setStreamQuality] = React.useState<"low" | "medium" | "high">("medium")
+  const [isFullscreen, setIsFullscreen] = React.useState(false)
+  const [connectionStatus, setConnectionStatus] = React.useState<"connected" | "connecting" | "disconnected">("disconnected")
+  const [actionOverlay, setActionOverlay] = React.useState<{ action_type?: string; target?: string; action_text?: string } | null>(null)
+  const [frameFormat, setFrameFormat] = React.useState<"jpeg" | "png">("jpeg")
+  const wsRef = React.useRef<WebSocket | null>(null)
 
   const addLog = React.useCallback((log: AgentLog) => {
     setLogs(prev => [...prev, log])
@@ -87,7 +98,7 @@ function GeneratePageContent() {
     const startGeneration = async () => {
       try {
         addLog({ type: "reasoning", text: `Initializing generation for ${repo.split('/').pop()}...`, timestamp: Date.now() })
-        
+
         const response = await fetch("/api/demos/generate", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
@@ -124,14 +135,14 @@ function GeneratePageContent() {
     const pollStatus = async () => {
       try {
         const response = await fetch(`/api/demos/${demoId}/status`)
-          if (response.ok) {
-            const status: any = await response.json()
-            
-            if (status.session?.id) {
-              setSessionId(status.session.id)
-            }
+        if (response.ok) {
+          const status: any = await response.json()
 
-            switch (status.status?.toLowerCase()) {
+          if (status.session?.id) {
+            setSessionId(status.session.id)
+          }
+
+          switch (status.status?.toLowerCase()) {
             case "pending":
               setProgress(15)
               setCurrentAction("Queued for processing...")
@@ -218,54 +229,105 @@ function GeneratePageContent() {
   React.useEffect(() => {
     if (!sessionId) return
 
-      const wsBaseUrl = process.env.NEXT_PUBLIC_WS_URL || `ws://${window.location.hostname}:8000`
-      const wsUrl = `${wsBaseUrl}/ws/session:${sessionId}`
+    const wsBaseUrl = process.env.NEXT_PUBLIC_WS_URL || `ws://${window.location.hostname}:8000`
+    const wsUrl = `${wsBaseUrl}/ws/session:${sessionId}`
+
+    const connectWebSocket = () => {
+      setConnectionStatus("connecting")
       const ws = new WebSocket(wsUrl)
+      wsRef.current = ws
 
-    ws.onmessage = (event) => {
-      const message = JSON.parse(event.data)
-      
-      if (message.type === "agent_update") {
-        const { update_type, data } = message
-        addLog({
-          type: update_type === "action" ? "action" : 
-                update_type === "reasoning" ? "reasoning" :
+      ws.onmessage = (event) => {
+        const message = JSON.parse(event.data)
+
+        if (message.type === "connected") {
+          // Initial connection with quality presets
+          setConnectionStatus("connected")
+          if (message.current_quality) {
+            setStreamQuality(message.current_quality)
+          }
+        } else if (message.type === "agent_update") {
+          const { update_type, data } = message
+          addLog({
+            type: update_type === "action" ? "action" :
+              update_type === "reasoning" ? "reasoning" :
                 update_type === "milestone" ? "milestone" :
-                update_type === "error" ? "error" : "verification",
-          text: data.message || data.action || data.reasoning || "Update received",
-          timestamp: Date.now()
-        })
-
-        if (data.action) setCurrentAction(data.action)
-        if (data.feature_name) setCurrentFeature(data.feature_name)
-        if (data.step_index !== undefined) {
-          setStepProgress({
-            current: data.step_index + 1,
-            total: data.total_steps || stepProgress.total
+                  update_type === "error" ? "error" : "verification",
+            text: data.message || data.action || data.reasoning || "Update received",
+            timestamp: Date.now()
           })
+
+          if (data.action) setCurrentAction(data.action)
+          if (data.feature_name) setCurrentFeature(data.feature_name)
+          if (data.step_index !== undefined) {
+            setStepProgress({
+              current: data.step_index + 1,
+              total: data.total_steps || stepProgress.total
+            })
+          }
+        } else if (message.type === "frame") {
+          setCurrentFrame(message.data || message.frame)
+          if (message.format) setFrameFormat(message.format)
+          if (message.action_overlay) {
+            setActionOverlay(message.action_overlay)
+          }
+        } else if (message.type === "action") {
+          setActionOverlay(message.data)
+        } else if (message.type === "action_cleared") {
+          setActionOverlay(null)
+        } else if (message.type === "quality_changed") {
+          setStreamQuality(message.quality)
+        } else if (message.type === "status_update") {
+          if (message.data?.milestones_count !== undefined) {
+            setMilestonesCount(message.data.milestones_count)
+          }
         }
-      } else if (message.type === "frame") {
-        setCurrentFrame(message.frame)
-      } else if (message.type === "status_update") {
-        if (message.data?.milestones_count !== undefined) {
-          setMilestonesCount(message.data.milestones_count)
+      }
+
+      ws.onopen = () => {
+        setConnectionStatus("connected")
+        addLog({ type: "verification", text: "Connected to live agent stream", timestamp: Date.now() })
+        // Request initial frame and set quality
+        ws.send(JSON.stringify({ type: "set_quality", quality: streamQuality }))
+        ws.send(JSON.stringify({ type: "request_frame", session_id: sessionId }))
+      }
+
+      ws.onerror = (error) => {
+        console.error("WebSocket error:", error)
+        setConnectionStatus("disconnected")
+      }
+
+      ws.onclose = () => {
+        setConnectionStatus("disconnected")
+        // Auto-reconnect after 2 seconds if not finished
+        if (!isFinished && !hasError) {
+          setTimeout(connectWebSocket, 2000)
         }
       }
     }
 
-    ws.onopen = () => {
-      addLog({ type: "verification", text: "Connected to live agent stream", timestamp: Date.now() })
-      ws.send(JSON.stringify({ type: "get_frame", session_id: sessionId }))
-    }
-
-    ws.onerror = (error) => {
-      console.error("WebSocket error:", error)
-    }
+    connectWebSocket()
 
     return () => {
-      ws.close()
+      if (wsRef.current) {
+        wsRef.current.close()
+        wsRef.current = null
+      }
     }
-  }, [sessionId, addLog, stepProgress.total])
+  }, [sessionId, addLog, stepProgress.total, isFinished, hasError])
+
+  // Send quality change to WebSocket
+  const handleQualityChange = (quality: "low" | "medium" | "high") => {
+    setStreamQuality(quality)
+    if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
+      wsRef.current.send(JSON.stringify({ type: "set_quality", quality }))
+    }
+  }
+
+  // Toggle fullscreen
+  const toggleFullscreen = () => {
+    setIsFullscreen(!isFullscreen)
+  }
 
   React.useEffect(() => {
     if (isFinished || hasError || !demoId || sessionId) return
@@ -289,14 +351,14 @@ function GeneratePageContent() {
         if (index < actions.length && !isFinished && !hasError) {
           const action = actions[index]
           addLog({ ...action, timestamp: Date.now() })
-          
+
           if (action.type === "action") {
             setCurrentAction(action.text)
           }
           if (action.type === "milestone") {
             setMilestonesCount(prev => prev + 1)
           }
-          
+
           index++
         } else {
           clearInterval(logInterval)
@@ -352,16 +414,15 @@ function GeneratePageContent() {
           <div className="flex-1 overflow-y-auto p-4 space-y-3 font-mono text-xs">
             <AnimatePresence initial={false}>
               {logs.map((log, i) => (
-                <motion.div 
+                <motion.div
                   key={i}
                   initial={{ opacity: 0, x: -10 }}
                   animate={{ opacity: 1, x: 0 }}
-                  className={`flex gap-2 ${
-                    log.type === 'milestone' ? 'text-green-400' : 
-                    log.type === 'error' ? 'text-red-400' :
-                    log.type === 'verification' ? 'text-blue-400' :
-                    log.type === 'action' ? 'text-zinc-300' : 'text-zinc-500'
-                  }`}
+                  className={`flex gap-2 ${log.type === 'milestone' ? 'text-green-400' :
+                      log.type === 'error' ? 'text-red-400' :
+                        log.type === 'verification' ? 'text-blue-400' :
+                          log.type === 'action' ? 'text-zinc-300' : 'text-zinc-500'
+                    }`}
                 >
                   <span className="shrink-0 text-zinc-600">{`>`}</span>
                   <span className={log.type === 'milestone' || log.type === 'error' ? 'font-bold' : ''}>{log.text}</span>
@@ -378,7 +439,7 @@ function GeneratePageContent() {
           </div>
         </Card>
 
-        <Card className="lg:col-span-8 flex flex-col overflow-hidden bg-background border shadow-2xl relative">
+        <Card className={`lg:col-span-8 flex flex-col overflow-hidden bg-background border shadow-2xl relative ${isFullscreen ? 'fixed inset-4 z-50' : ''}`}>
           <div className="h-10 border-b bg-muted/50 flex items-center px-4 gap-3">
             <div className="flex gap-1.5">
               <div className="h-3 w-3 rounded-full bg-border" />
@@ -391,15 +452,72 @@ function GeneratePageContent() {
                 {currentFeature || "localhost:3000"}
               </span>
             </div>
+            {/* Quality Selector */}
+            <div className="flex items-center gap-1">
+              {(["low", "medium", "high"] as const).map((q) => (
+                <button
+                  key={q}
+                  onClick={() => handleQualityChange(q)}
+                  className={`px-2 py-0.5 text-[9px] font-medium rounded transition-colors ${streamQuality === q
+                      ? "bg-primary text-primary-foreground"
+                      : "bg-muted text-muted-foreground hover:bg-muted/80"
+                    }`}
+                >
+                  {q.toUpperCase()}
+                </button>
+              ))}
+            </div>
+            {/* Connection Status */}
+            <div className="flex items-center gap-1">
+              {connectionStatus === "connected" ? (
+                <Wifi className="h-3 w-3 text-green-500" />
+              ) : connectionStatus === "connecting" ? (
+                <Loader2 className="h-3 w-3 text-yellow-500 animate-spin" />
+              ) : (
+                <WifiOff className="h-3 w-3 text-red-500" />
+              )}
+            </div>
+            {/* Fullscreen Toggle */}
+            <button onClick={toggleFullscreen} className="p-1 hover:bg-muted rounded">
+              {isFullscreen ? (
+                <Minimize2 className="h-3.5 w-3.5 text-muted-foreground" />
+              ) : (
+                <Maximize2 className="h-3.5 w-3.5 text-muted-foreground" />
+              )}
+            </button>
           </div>
 
           <div className="flex-1 relative bg-zinc-50 flex items-center justify-center overflow-hidden">
             {currentFrame ? (
-              <img 
-                src={`data:image/jpeg;base64,${currentFrame}`}
-                alt="Live browser view"
-                className="w-full h-full object-contain"
-              />
+              <>
+                <img
+                  src={`data:image/${frameFormat};base64,${currentFrame}`}
+                  alt="Live browser view"
+                  className="w-full h-full object-contain"
+                />
+                {/* Action Overlay */}
+                {actionOverlay && (
+                  <div className="absolute bottom-20 left-4 right-4 flex justify-center z-30">
+                    <motion.div
+                      initial={{ opacity: 0, y: 10 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      className="bg-black/80 backdrop-blur-md px-4 py-2 rounded-lg border border-white/20 shadow-xl max-w-md"
+                    >
+                      <div className="flex items-center gap-2">
+                        <MousePointer2 className="h-4 w-4 text-primary" />
+                        <span className="text-white text-sm font-medium">
+                          {actionOverlay.action_text || actionOverlay.action_type || "Performing action..."}
+                        </span>
+                      </div>
+                      {actionOverlay.target && (
+                        <p className="text-white/60 text-xs mt-1 font-mono truncate">
+                          Target: {actionOverlay.target}
+                        </p>
+                      )}
+                    </motion.div>
+                  </div>
+                )}
+              </>
             ) : (
               <div className="w-[90%] h-[80%] bg-white rounded-lg shadow-sm border border-zinc-200 p-6 space-y-4">
                 <div className="flex items-center justify-between mb-8">
@@ -419,8 +537,8 @@ function GeneratePageContent() {
                 </div>
                 <div className="h-40 bg-primary/5 rounded-lg border border-primary/10 flex items-end p-4 gap-2">
                   {[40, 70, 45, 90, 65, 80, 55].map((h, i) => (
-                    <motion.div 
-                      key={i} 
+                    <motion.div
+                      key={i}
                       className="flex-1 bg-primary/40 rounded-t"
                       initial={{ height: 0 }}
                       animate={{ height: `${h}%` }}
@@ -432,9 +550,9 @@ function GeneratePageContent() {
             )}
 
             {!isFinished && !hasError && (
-              <motion.div 
+              <motion.div
                 className="absolute z-20 pointer-events-none"
-                animate={{ 
+                animate={{
                   x: [0, 200, -150, 50, 0],
                   y: [0, -100, 150, -50, 0],
                 }}
@@ -458,7 +576,7 @@ function GeneratePageContent() {
 
             <AnimatePresence>
               {isFinished && (
-                <motion.div 
+                <motion.div
                   className="absolute inset-0 bg-background/80 backdrop-blur-md flex flex-col items-center justify-center z-40 p-8 text-center"
                   initial={{ opacity: 0 }}
                   animate={{ opacity: 1 }}
@@ -485,7 +603,7 @@ function GeneratePageContent() {
               )}
 
               {hasError && (
-                <motion.div 
+                <motion.div
                   className="absolute inset-0 bg-background/80 backdrop-blur-md flex flex-col items-center justify-center z-40 p-8 text-center"
                   initial={{ opacity: 0 }}
                   animate={{ opacity: 1 }}

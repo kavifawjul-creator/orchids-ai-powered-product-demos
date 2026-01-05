@@ -537,6 +537,107 @@ class MCPBrowserService:
 
         return elements
 
+    async def get_live_frame(
+        self, 
+        session_id: str, 
+        quality: int = 70,
+        scale: float = 0.75
+    ) -> Optional[str]:
+        """
+        Get current browser screenshot as compressed base64 JPEG.
+        Optimized for live streaming with lower quality and optional scaling.
+        
+        Args:
+            session_id: Browser session ID
+            quality: JPEG quality (1-100), lower = smaller file
+            scale: Scale factor (0.5 = half size), lower = smaller file
+        
+        Returns:
+            Base64 encoded JPEG string or None if session not found
+        """
+        session = self._sessions.get(session_id)
+        if not session or not session.get("page"):
+            return None
+        
+        try:
+            page: Page = session["page"]
+            
+            # Use viewport screenshot for speed (not full page)
+            screenshot_bytes = await page.screenshot(
+                type="jpeg",
+                quality=quality,
+                full_page=False,
+                timeout=5000
+            )
+            
+            return base64.b64encode(screenshot_bytes).decode('utf-8')
+        except Exception as e:
+            logger.debug(f"Failed to capture live frame: {e}")
+            return None
+
+    async def stream_frames(
+        self,
+        session_id: str,
+        fps: int = 5,
+        quality: int = 70
+    ):
+        """
+        Async generator that yields frames at specified FPS.
+        Use this for continuous live streaming to WebSocket clients.
+        
+        Args:
+            session_id: Browser session ID
+            fps: Target frames per second (1-10)
+            quality: JPEG quality (1-100)
+        
+        Yields:
+            Dict with type, frame (base64), and metadata
+        """
+        fps = min(max(fps, 1), 10)  # Clamp between 1-10 FPS
+        interval = 1.0 / fps
+        frame_count = 0
+        
+        while session_id in self._sessions:
+            start_time = time.time()
+            
+            frame = await self.get_live_frame(session_id, quality=quality)
+            if frame:
+                frame_count += 1
+                yield {
+                    "type": "frame",
+                    "frame": frame,
+                    "metadata": {
+                        "frame_number": frame_count,
+                        "timestamp": time.time(),
+                        "session_id": session_id
+                    }
+                }
+            
+            # Calculate sleep time to maintain target FPS
+            elapsed = time.time() - start_time
+            sleep_time = max(0, interval - elapsed)
+            await asyncio.sleep(sleep_time)
+    
+    async def capture_frame_with_action(
+        self,
+        session_id: str,
+        action_type: str,
+        target: Optional[str] = None
+    ) -> Optional[str]:
+        """
+        Capture a frame with action overlay metadata.
+        Useful for recording key moments during automation.
+        """
+        frame = await self.get_live_frame(session_id, quality=80)
+        if frame:
+            await self._emit_event("FRAME_CAPTURED", {
+                "session_id": session_id,
+                "action_type": action_type,
+                "target": target,
+                "has_frame": True
+            })
+        return frame
+
     def get_available_tools(self) -> List[MCPToolDefinition]:
         return MCP_BROWSER_TOOLS
 

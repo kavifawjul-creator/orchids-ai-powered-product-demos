@@ -115,6 +115,11 @@ class Clip(BaseModel):
     captions: Optional[str] = None
     overlay: Optional[Dict[str, Any]] = None
     order_index: int = 0
+    # New fields for editor features
+    trim_start: float = 0.0  # Trim start point in seconds
+    trim_end: Optional[float] = None  # Trim end point (None = end of clip)
+    audio_url: Optional[str] = None  # Generated TTS audio URL
+    voice_id: Optional[str] = None  # TTS voice used
     created_at: datetime = Field(default_factory=datetime.utcnow)
 
 class RecordingEvent(BaseModel):

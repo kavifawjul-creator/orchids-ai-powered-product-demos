@@ -146,6 +146,8 @@ class AgentExecutionService:
         if not plan:
             return
 
+        streaming_task = None
+        
         try:
             session.state = AgentState.INITIALIZING
             session.started_at = datetime.utcnow()
@@ -159,6 +161,11 @@ class AgentExecutionService:
                 project_id=session.project_id,
             )
             session.browser_session_id = browser_session.id
+
+            # Start live frame streaming
+            streaming_task = asyncio.create_task(
+                self._stream_frames_to_websocket(session_id, browser_session.id)
+            )
 
             session.state = AgentState.EXECUTING
 
@@ -200,6 +207,14 @@ class AgentExecutionService:
             ))
 
         finally:
+            # Stop frame streaming
+            if streaming_task:
+                streaming_task.cancel()
+                try:
+                    await streaming_task
+                except asyncio.CancelledError:
+                    pass
+            
             if session.browser_session_id:
                 await browser_service.close_session(session.browser_session_id)
 
@@ -223,6 +238,19 @@ class AgentExecutionService:
                 "step_type": step.step_type.value,
             },
         ))
+
+        # Send action overlay to stream manager for live display
+        try:
+            from ..services.browser.streaming import stream_manager
+            await stream_manager.send_action(session.browser_session_id, {
+                "action_type": step.step_type.value,
+                "action_text": step.description,
+                "target": step.target,
+                "step_index": step.order,
+                "total_steps": session.total_steps
+            })
+        except Exception as e:
+            logger.debug(f"Failed to send action overlay: {e}")
 
         try:
             screenshot_b64 = None
@@ -299,6 +327,16 @@ class AgentExecutionService:
             ))
 
             await self._check_milestone(session, step.order)
+            
+            # Clear action overlay after step completion
+            try:
+                from ..services.browser.streaming import stream_manager
+                await stream_manager.clear_action(session.browser_session_id)
+            except Exception:
+                pass
+            
+            # Broadcast frame after each step for live view
+            await self._broadcast_step_frame(session, step)
 
         except Exception as e:
             logger.error(f"Step execution failed: {e}")
@@ -373,6 +411,71 @@ class AgentExecutionService:
                         "importance": milestone.importance,
                     },
                 ))
+
+    async def _stream_frames_to_websocket(self, session_id: str, browser_session_id: str):
+        """
+        Background task that streams live frames to WebSocket clients.
+        Runs at ~5 FPS while the agent is executing.
+        """
+        from ..api.websocket import broadcast_frame
+        
+        try:
+            async for frame_data in browser_service.stream_frames(
+                browser_session_id,
+                fps=5,
+                quality=70
+            ):
+                if session_id not in self._sessions:
+                    break
+                    
+                session = self._sessions[session_id]
+                if session.state in [AgentState.COMPLETED, AgentState.FAILED, AgentState.CANCELLED]:
+                    break
+                
+                # Broadcast frame to all WebSocket subscribers
+                await broadcast_frame(
+                    session_id=session_id,
+                    frame_b64=frame_data["frame"],
+                    metadata={
+                        "step_index": session.current_step_index,
+                        "total_steps": session.total_steps,
+                        "state": session.state.value,
+                        **frame_data.get("metadata", {})
+                    }
+                )
+        except asyncio.CancelledError:
+            logger.debug(f"Frame streaming cancelled for session {session_id}")
+        except Exception as e:
+            logger.warning(f"Frame streaming error: {e}")
+
+    async def _broadcast_step_frame(self, session: AgentSession, step: ExecutionStep):
+        """
+        Broadcast a high-quality frame after completing a step.
+        This gives clients a clear image at key moments.
+        """
+        from ..api.websocket import broadcast_agent_update
+        
+        try:
+            # Capture higher quality frame for step completion
+            frame = await browser_service.get_live_frame(
+                session.browser_session_id,
+                quality=85
+            )
+            
+            if frame:
+                await broadcast_agent_update(
+                    session_id=session.id,
+                    update_type="action",
+                    data={
+                        "action": step.description,
+                        "step_index": step.order,
+                        "total_steps": session.total_steps,
+                        "feature_name": step.metadata.get("feature_name") if step.metadata else None,
+                        "frame": frame
+                    }
+                )
+        except Exception as e:
+            logger.debug(f"Failed to broadcast step frame: {e}")
 
     async def verify_state(
         self,
